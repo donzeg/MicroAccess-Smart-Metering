@@ -1,0 +1,11 @@
+# Local tooling
+.tools/
+
+# Node dependencies
+backend/node_modules/
+
+# Build outputs
+backend/dist/
+
+# Environment files
+backend/.env
