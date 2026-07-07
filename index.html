@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GUDU Meter Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #dceaf8;
+      --panel: rgba(250, 253, 255, 0.9);
+      --panel-border: rgba(70, 101, 136, 0.14);
+      --text: #1f2933;
+      --muted: #52606d;
+      --solar: #f08c00;
+      --grid: #127fbf;
+      --site: #2f855a;
+      --alert: #c0392b;
+      --shadow: 0 20px 45px rgba(24, 56, 87, 0.14);
+      --radius: 22px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(84, 156, 255, 0.28), transparent 28%),
+        radial-gradient(circle at 85% 15%, rgba(18, 127, 191, 0.24), transparent 26%),
+        radial-gradient(circle at 50% 100%, rgba(165, 213, 255, 0.35), transparent 34%),
+        linear-gradient(180deg, #eff7ff 0%, #d9e9fb 52%, #c8def6 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 32px auto 48px;
+    }
+
+    .hero,
+    .panel,
+    .stat,
+    .chart-card,
+    .table-card {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero {
+      padding: 28px;
+      border-radius: 32px;
+      display: grid;
+      gap: 20px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1;
+      max-width: 12ch;
+    }
+
+    .hero p {
+      max-width: 70ch;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 1rem;
+      margin-inline: auto;
+    }
+
+    .upload-grid,
+    .stats-grid,
+    .chart-grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .upload-grid {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .panel {
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .upload-card {
+      display: grid;
+      gap: 12px;
+    }
+
+    .tariff-card {
+      align-content: start;
+    }
+
+    .field-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      text-align: left;
+    }
+
+    .field label {
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .upload-card strong {
+      font-size: 1.05rem;
+    }
+
+    .upload-card small,
+    .status,
+    .empty-state,
+    .notes li,
+    th,
+    td {
+      color: var(--muted);
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border: 1px dashed rgba(82, 96, 109, 0.45);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    select,
+    input[type="number"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid rgba(82, 96, 109, 0.22);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.82);
+      font: inherit;
+      color: var(--text);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    .primary {
+      color: white;
+      background: linear-gradient(135deg, #1f2933 0%, #52606d 100%);
+      box-shadow: 0 12px 24px rgba(31, 41, 51, 0.2);
+    }
+
+    .ghost {
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(82, 96, 109, 0.2);
+    }
+
+    .status {
+      min-height: 24px;
+      font-size: 0.95rem;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      margin-top: 24px;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .stat {
+      border-radius: 20px;
+      padding: 22px 24px;
+      display: grid;
+      gap: 12px;
+      min-height: 188px;
+      align-content: start;
+      grid-column: span 3;
+    }
+
+    .stat--wide {
+      grid-column: span 4;
+    }
+
+    .stat--xwide {
+      grid-column: span 6;
+    }
+
+    .stat--compact {
+      grid-column: span 2;
+    }
+
+    .stat--tall {
+      min-height: 212px;
+    }
+
+    .stat .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .stat .value {
+      font-size: clamp(1.95rem, 2.4vw, 3rem);
+      line-height: 1.12;
+      max-width: 9ch;
+      text-wrap: balance;
+    }
+
+    .stat .value.value--wide {
+      max-width: 14ch;
+      font-size: clamp(1.75rem, 2vw, 2.6rem);
+      overflow-wrap: anywhere;
+    }
+
+    .stat .value.value--period {
+      max-width: 13ch;
+    }
+
+    .stat .value.value--compact {
+      max-width: 7ch;
+    }
+
+    .stat .status {
+      font-size: 0.92rem;
+      line-height: 1.4;
+      max-width: 20ch;
+    }
+
+    .stat .status strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .section-heading {
+      margin: 28px 0 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+    }
+
+    .section-heading p {
+      color: var(--muted);
+      max-width: 60ch;
+      line-height: 1.5;
+    }
+
+    .section-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .toggle-group {
+      display: inline-flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(82, 96, 109, 0.14);
+    }
+
+    .toggle-button {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+      box-shadow: none;
+    }
+
+    .toggle-button.is-active {
+      background: linear-gradient(135deg, #1f2933 0%, #52606d 100%);
+      color: white;
+      box-shadow: 0 10px 20px rgba(31, 41, 51, 0.16);
+    }
+
+    .toggle-button.is-subtle-active {
+      background: rgba(18, 127, 191, 0.12);
+      color: #0f4d75;
+      border-color: rgba(18, 127, 191, 0.18);
+    }
+
+    .chart-card.is-hidden {
+      display: none;
+    }
+
+    body.print-mode .chart-card.is-hidden {
+      display: block;
+    }
+
+    .print-note {
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+
+    .report-note {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid rgba(82, 96, 109, 0.14);
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .report-note strong {
+      color: var(--text);
+    }
+
+    .summary-shell {
+      margin-top: 28px;
+    }
+
+    .summary-card {
+      padding: 24px;
+      border-radius: 28px;
+      display: grid;
+      gap: 18px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 248, 255, 0.9) 100%),
+        radial-gradient(circle at top right, rgba(18, 127, 191, 0.12), transparent 32%);
+    }
+
+    .summary-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .summary-header p {
+      max-width: 62ch;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .summary-item {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(82, 96, 109, 0.12);
+      display: grid;
+      gap: 8px;
+      min-height: 118px;
+    }
+
+    .summary-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .summary-value {
+      font-size: clamp(1.25rem, 1.8vw, 2rem);
+      line-height: 1.15;
+      color: var(--text);
+    }
+
+    .summary-caption {
+      font-size: 0.92rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .summary-callout {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(18, 127, 191, 0.08);
+      border: 1px solid rgba(18, 127, 191, 0.12);
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .summary-callout strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .chart-grid {
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+
+    .chart-card,
+    .table-card {
+      border-radius: 26px;
+      padding: 20px;
+    }
+
+    .chart-card h3,
+    .table-card h3 {
+      margin-bottom: 8px;
+    }
+
+    .chart-card p,
+    .table-card p {
+      margin-bottom: 18px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+
+    .table-card {
+      margin-top: 18px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(82, 96, 109, 0.14);
+      white-space: nowrap;
+    }
+
+    td strong {
+      color: var(--text);
+    }
+
+    .notes {
+      margin-top: 18px;
+      padding-left: 18px;
+      line-height: 1.55;
+    }
+
+    .empty-state {
+      padding: 24px;
+      border: 1px dashed rgba(82, 96, 109, 0.28);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.45);
+      text-align: center;
+    }
+
+    .stats-grid > .empty-state {
+      grid-column: 1 / -1;
+      min-height: 148px;
+      display: grid;
+      place-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.88rem;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(82, 96, 109, 0.16);
+    }
+
+    .pill::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .solar { color: var(--solar); }
+    .grid { color: var(--grid); }
+    .site { color: var(--site); }
+
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 12mm;
+      }
+
+      body {
+        background: white;
+      }
+
+      .shell {
+        width: 100%;
+        margin: 0;
+      }
+
+      .hero {
+        break-inside: avoid;
+      }
+
+      .hero,
+      .panel,
+      .stat,
+      .chart-card,
+      .table-card {
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      .actions,
+      input[type="file"],
+      .section-tools {
+        display: none;
+      }
+
+      .chart-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .chart-card,
+      .table-card,
+      .stats-grid,
+      .section-heading {
+        break-inside: avoid;
+      }
+
+      .chart-wrap {
+        height: 260px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .stats-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+
+      .stat,
+      .stat--wide,
+      .stat--xwide {
+        grid-column: span 3;
+      }
+
+      .stat--compact {
+        grid-column: span 2;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stat,
+      .stat--wide,
+      .stat--xwide,
+      .stat--compact {
+        grid-column: span 1;
+        min-height: auto;
+      }
+
+      .stat .value {
+        max-width: none;
+        text-wrap: pretty;
+      }
+
+      .stats-grid > .empty-state {
+        grid-column: span 1;
+      }
+
+      .section-heading {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .summary-header,
+      .summary-grid {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .section-tools {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">GUDU Site Energy Snapshot</p>
+        <h1>Make the meter exports readable.</h1>
+      </div>
+      <p>
+        Upload the solar and grid CSV exports to turn raw cumulative meter readings into a management-ready view.
+        The report derives interval energy from the meter reading changes, then shows solar generation, grid import,
+        and estimated total site energy on simple charts.
+      </p>
+
+      <div class="upload-grid">
+        <section class="panel upload-card">
+          <div>
+            <strong>Solar meter CSV</strong><br>
+            <small>Expected meter name contains Solar.</small>
+          </div>
+          <input id="solarFile" type="file" accept=".csv,text/csv">
+        </section>
+
+        <section class="panel upload-card">
+          <div>
+            <strong>Grid meter CSV</strong><br>
+            <small>Expected meter name contains GRID.</small>
+          </div>
+          <input id="gridFile" type="file" accept=".csv,text/csv">
+        </section>
+
+        <section class="panel upload-card tariff-card">
+          <div>
+            <strong>AEDC tariff setup</strong><br>
+            <small>Select the location band and enter the charge per kWh to estimate cost.</small>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="tariffBand">Band</label>
+              <select id="tariffBand">
+                <option value="A" selected>Band A</option>
+                <option value="B">Band B</option>
+                <option value="C">Band C</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="tariffRate">NGN per kWh</label>
+              <input id="tariffRate" type="number" min="0" step="0.01" value="0">
+            </div>
+          </div>
+          <small id="tariffNote">Set the actual AEDC tariff so the report can show estimated energy cost.</small>
+        </section>
+      </div>
+
+      <div class="actions">
+        <button id="buildReport" class="primary" type="button">Build report</button>
+        <button id="printReport" class="ghost" type="button">Print / Save PDF</button>
+      </div>
+
+      <div class="print-note">Print mode expands the full report so the PDF includes both management and detailed analysis views.</div>
+
+      <div id="status" class="status">Select both CSV files, then build the report.</div>
+    </section>
+
+    <section id="reportContent">
+      <section class="summary-shell">
+        <div id="executiveSummary" class="summary-card table-card">
+          <div class="empty-state">The executive summary will appear here after the report is built.</div>
+        </div>
+      </section>
+
+      <div class="section-heading">
+        <div>
+          <h2>Overview</h2>
+          <p>The cards below summarize the loaded period using energy derived from changes in cumulative meter readings.</p>
+        </div>
+        <div id="legendPills"></div>
+      </div>
+
+      <div id="stats" class="stats-grid">
+        <div class="empty-state">No report yet. Upload the solar and grid files to generate one.</div>
+      </div>
+
+      <div id="reportNote" class="report-note">
+        Current cumulative readings and reporting-window energy will be explained here after the report is built.
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <h2>Charts</h2>
+          <p>Daily totals are shown by default for management. Use the controls to switch views or reveal the hourly diagnostic charts.</p>
+        </div>
+        <div class="section-tools">
+          <div class="toggle-group" role="group" aria-label="Chart time view">
+            <button id="dailyViewBtn" class="toggle-button is-active" type="button">Daily view</button>
+            <button id="hourlyViewBtn" class="toggle-button" type="button">Hourly view</button>
+          </div>
+          <button id="toggleDetailsBtn" class="ghost toggle-button" type="button">Show detailed analysis</button>
+        </div>
+      </div>
+
+      <div id="charts" class="chart-grid">
+        <div class="empty-state">Charts will appear here after the data is loaded.</div>
+      </div>
+
+      <section id="details" class="table-card">
+        <h3>Daily summary</h3>
+        <p>This table can be copied into reports or used to validate the totals shown above.</p>
+        <div class="empty-state">No daily summary available yet.</div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const charts = [];
+    const tariffRates = { A: 0, B: 0, C: 0 };
+    const reportView = {
+      chartView: "daily",
+      showDetailed: false,
+      printing: false,
+      restoreAfterPrint: null
+    };
+    let currentReport = null;
+
+    const dom = {
+      solarFile: document.getElementById("solarFile"),
+      gridFile: document.getElementById("gridFile"),
+      tariffBand: document.getElementById("tariffBand"),
+      tariffRate: document.getElementById("tariffRate"),
+      tariffNote: document.getElementById("tariffNote"),
+      buildReport: document.getElementById("buildReport"),
+      printReport: document.getElementById("printReport"),
+      dailyViewBtn: document.getElementById("dailyViewBtn"),
+      hourlyViewBtn: document.getElementById("hourlyViewBtn"),
+      toggleDetailsBtn: document.getElementById("toggleDetailsBtn"),
+      status: document.getElementById("status"),
+      stats: document.getElementById("stats"),
+      charts: document.getElementById("charts"),
+      details: document.getElementById("details"),
+      legendPills: document.getElementById("legendPills"),
+      reportNote: document.getElementById("reportNote"),
+      executiveSummary: document.getElementById("executiveSummary")
+    };
+
+    dom.buildReport.addEventListener("click", buildReport);
+    dom.printReport.addEventListener("click", handlePrintReport);
+    dom.dailyViewBtn.addEventListener("click", () => setChartView("daily"));
+    dom.hourlyViewBtn.addEventListener("click", () => setChartView("hourly"));
+    dom.toggleDetailsBtn.addEventListener("click", toggleDetailedAnalysis);
+    dom.tariffBand.addEventListener("change", handleBandChange);
+    dom.tariffRate.addEventListener("input", handleTariffRateChange);
+    window.addEventListener("afterprint", handleAfterPrint);
+
+    async function buildReport() {
+      const solarInput = dom.solarFile.files[0];
+      const gridInput = dom.gridFile.files[0];
+
+      if (!solarInput || !gridInput) {
+        setStatus("Select both the solar CSV and the grid CSV before building the report.", true);
+        return;
+      }
+
+      try {
+        setStatus("Reading files and building charts...");
+        const [solarText, gridText] = await Promise.all([solarInput.text(), gridInput.text()]);
+        const solarData = parseMeterCsv(solarText, "solar");
+        const gridData = parseMeterCsv(gridText, "grid");
+
+        currentReport = { solar: solarData, grid: gridData };
+        renderCurrentReport();
+        setStatus("Report ready. Use Print / Save PDF for management sharing.");
+      } catch (error) {
+        setStatus(error.message || "The report could not be built.", true);
+      }
+    }
+
+    function handleBandChange() {
+      const band = dom.tariffBand.value;
+      dom.tariffRate.value = String(tariffRates[band] ?? 0);
+      updateTariffNote();
+      renderCurrentReport();
+    }
+
+    function handleTariffRateChange() {
+      tariffRates[dom.tariffBand.value] = toNumber(dom.tariffRate.value);
+      updateTariffNote();
+      renderCurrentReport();
+    }
+
+    function setChartView(view) {
+      reportView.chartView = view;
+      updateChartControls();
+      updateChartVisibility();
+    }
+
+    function toggleDetailedAnalysis() {
+      reportView.showDetailed = !reportView.showDetailed;
+      updateChartControls();
+      updateChartVisibility();
+      if (currentReport) {
+        resizeCharts();
+      }
+    }
+
+    function handlePrintReport() {
+      reportView.restoreAfterPrint = {
+        chartView: reportView.chartView,
+        showDetailed: reportView.showDetailed
+      };
+      reportView.printing = true;
+      reportView.chartView = "daily";
+      reportView.showDetailed = true;
+      document.body.classList.add("print-mode");
+      updateChartControls();
+      updateChartVisibility();
+      resizeCharts();
+      window.setTimeout(() => window.print(), 150);
+    }
+
+    function handleAfterPrint() {
+      if (!reportView.restoreAfterPrint) {
+        return;
+      }
+
+      reportView.printing = false;
+      reportView.chartView = reportView.restoreAfterPrint.chartView;
+      reportView.showDetailed = reportView.restoreAfterPrint.showDetailed;
+      reportView.restoreAfterPrint = null;
+      document.body.classList.remove("print-mode");
+      updateChartControls();
+      updateChartVisibility();
+      resizeCharts();
+    }
+
+    function renderCurrentReport() {
+      if (!currentReport) {
+        return;
+      }
+      renderReport(currentReport.solar, currentReport.grid);
+    }
+
+    function getTariffSettings() {
+      const band = dom.tariffBand.value;
+      const rate = toNumber(dom.tariffRate.value);
+      tariffRates[band] = rate;
+      return { band, rate };
+    }
+
+    function updateTariffNote() {
+      const { band, rate } = getTariffSettings();
+      dom.tariffNote.textContent = rate > 0
+        ? `${band} tariff set to ${formatCurrency(rate)} per kWh.`
+        : `Band ${band} selected. Enter the actual AEDC tariff to calculate cost.`;
+    }
+
+    function parseMeterCsv(text, expectedType) {
+      const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const headerIndex = lines.findIndex((line) => line.startsWith("Timestamp,"));
+
+      if (headerIndex === -1) {
+        throw new Error("One of the uploaded files does not contain the expected meter CSV header.");
+      }
+
+      const headers = splitCsvLine(lines[headerIndex]);
+      const rows = lines.slice(headerIndex + 1).map(splitCsvLine);
+      const records = rows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
+
+      if (!records.length) {
+        throw new Error("One of the uploaded files has no meter rows.");
+      }
+
+      const meterLabel = records[0]["Customer"] || records[0]["Meter Number"] || expectedType.toUpperCase();
+      const meterText = meterLabel.toLowerCase();
+
+      if (expectedType === "solar" && !meterText.includes("solar")) {
+        throw new Error("The file loaded in the Solar slot does not look like the solar meter export.");
+      }
+
+      if (expectedType === "grid" && !meterText.includes("grid")) {
+        throw new Error("The file loaded in the Grid slot does not look like the grid meter export.");
+      }
+
+      const sorted = records
+        .map((record) => ({
+          timestamp: record["Timestamp"],
+          date: new Date(record["Timestamp"]),
+          meterReading: toNumber(record["Meter Reading (kWh)"]),
+          usageAmount: toNumber(record["Usage Amount (kWh)"]),
+          anomalous: String(record["Anomalous?"]).toLowerCase() === "true",
+          customer: record["Customer"],
+          meterNumber: record["Meter Number"]
+        }))
+        .filter((record) => !Number.isNaN(record.date.getTime()))
+        .sort((left, right) => left.date - right.date);
+
+      let previous = null;
+      const intervals = [];
+      for (const record of sorted) {
+        if (previous) {
+          const delta = record.meterReading - previous.meterReading;
+          const hours = Math.max((record.date - previous.date) / 3600000, 0);
+          intervals.push({
+            end: record.date,
+            timeKey: record.date.toISOString(),
+            label: formatHourLabel(record.date),
+            dayKey: formatDayKey(record.date),
+            delta: delta > 0 ? delta : 0,
+            rawDelta: delta,
+            gapHours: hours,
+            anomalous: record.anomalous,
+            sourceUsageAmount: record.usageAmount
+          });
+        }
+        previous = record;
+      }
+
+      return {
+        type: expectedType,
+        label: meterLabel,
+        meterNumber: sorted[0].meterNumber,
+        records: sorted,
+        intervals,
+        anomalies: sorted.filter((record) => record.anomalous).length
+      };
+    }
+
+    function renderReport(solar, grid) {
+      clearCharts();
+      const tariff = getTariffSettings();
+
+      const mergedHourly = mergeIntervalsByLabel(solar.intervals, grid.intervals);
+      const daily = mergeIntervalsByDay(solar.intervals, grid.intervals);
+
+      const totalSolar = sumValues(solar.intervals.map((item) => item.delta));
+      const totalGrid = sumValues(grid.intervals.map((item) => item.delta));
+      const totalSite = totalSolar + totalGrid;
+      const solarShare = totalSite > 0 ? (totalSolar / totalSite) * 100 : 0;
+      const gridShare = totalSite > 0 ? (totalGrid / totalSite) * 100 : 0;
+      const maxSolarHour = maxEntry(solar.intervals, (item) => item.delta);
+      const maxGridHour = maxEntry(grid.intervals, (item) => item.delta);
+      const periodStart = minDate(solar.records[0]?.date, grid.records[0]?.date);
+      const periodEnd = maxDate(solar.records.at(-1)?.date, grid.records.at(-1)?.date);
+      const latestSolarReading = solar.records.at(-1)?.meterReading ?? 0;
+      const latestGridReading = grid.records.at(-1)?.meterReading ?? 0;
+      const startingSolarReading = solar.records[0]?.meterReading ?? 0;
+      const startingGridReading = grid.records[0]?.meterReading ?? 0;
+      const lifetimeSolarValue = latestSolarReading * tariff.rate;
+      const lifetimeGridCost = latestGridReading * tariff.rate;
+      const gridEnergyCost = totalGrid * tariff.rate;
+      const solarEnergyValue = totalSolar * tariff.rate;
+      const totalEnergyValue = totalSite * tariff.rate;
+      const managementHeadline = totalSolar >= totalGrid
+        ? `The site relied primarily on solar during this reporting window.`
+        : `The site relied more on grid energy during this reporting window.`;
+      const managementNote = tariff.rate > 0
+        ? `At Band ${tariff.band}, the visible reporting window represents an estimated total energy value of ${formatCurrency(totalEnergyValue)}.`
+        : `Set the AEDC tariff above to show the monetary value of the reporting window.`;
+
+      dom.legendPills.innerHTML = [
+        '<span class="pill solar">Solar generation</span>',
+        '<span class="pill grid">Grid import</span>',
+        '<span class="pill site">Estimated total site energy</span>'
+      ].join("");
+
+      dom.stats.innerHTML = [
+        statCard("Reporting period", `${formatDay(periodStart)} to ${formatDay(periodEnd)}`, "", "stat--wide stat--tall", "value--period"),
+        statCard("Lifetime solar meter reading", `${formatKwh(latestSolarReading)} kWh`, tariff.rate > 0 ? `First visible portal reading: ${formatKwh(startingSolarReading)} kWh<br><strong>Estimated value at Band ${tariff.band}: ${formatCurrency(lifetimeSolarValue)}</strong>` : `First visible portal reading: ${formatKwh(startingSolarReading)} kWh`, "stat--wide stat--tall"),
+        statCard("Lifetime grid meter reading", `${formatKwh(latestGridReading)} kWh`, tariff.rate > 0 ? `First visible portal reading: ${formatKwh(startingGridReading)} kWh<br><strong>Estimated cost at Band ${tariff.band}: ${formatCurrency(lifetimeGridCost)}</strong>` : `First visible portal reading: ${formatKwh(startingGridReading)} kWh`, "stat--wide stat--tall"),
+        statCard("Solar energy in reporting window", `${formatKwh(totalSolar)} kWh`),
+        statCard("Grid energy in reporting window", `${formatKwh(totalGrid)} kWh`, "", "", "value--compact"),
+        statCard("Estimated site energy in window", `${formatKwh(totalSite)} kWh`),
+        statCard("Solar share", `${solarShare.toFixed(1)}%`, "", "stat--compact", "value--compact"),
+        statCard("Grid share", `${gridShare.toFixed(1)}%`, "", "stat--compact", "value--compact"),
+        statCard(`Grid cost at Band ${tariff.band}`, formatCurrency(gridEnergyCost), tariff.rate > 0 ? `${formatCurrency(tariff.rate)} per kWh` : "Enter tariff above", "stat--wide", "value--wide"),
+        statCard("Solar value at tariff", formatCurrency(solarEnergyValue), tariff.rate > 0 ? "Equivalent value of solar generation" : "Enter tariff above", "stat--wide", "value--wide"),
+        statCard("Total site energy value", formatCurrency(totalEnergyValue), tariff.rate > 0 ? "Solar plus grid at selected tariff" : "Enter tariff above", "stat--xwide", "value--wide"),
+        statCard("Solar peak hour", maxSolarHour ? `${formatKwh(maxSolarHour.delta)} kWh` : "0 kWh", maxSolarHour ? maxSolarHour.label : "No interval"),
+        statCard("Grid peak hour", maxGridHour ? `${formatKwh(maxGridHour.delta)} kWh` : "0 kWh", maxGridHour ? maxGridHour.label : "No interval"),
+        statCard("Flagged solar rows", String(solar.anomalies), solar.label, "stat--wide"),
+        statCard("Flagged grid rows", String(grid.anomalies), grid.label, "stat--wide")
+      ].join("");
+
+      dom.executiveSummary.innerHTML = `
+        <div class="summary-header">
+          <div>
+            <p class="eyebrow">Executive Summary</p>
+            <h2>${managementHeadline}</h2>
+          </div>
+          <p>${managementNote}</p>
+        </div>
+        <div class="summary-grid">
+          <section class="summary-item">
+            <div class="summary-label">Reporting window</div>
+            <div class="summary-value">${formatDay(periodStart)} to ${formatDay(periodEnd)}</div>
+            <div class="summary-caption">Portal-visible export period used for this report.</div>
+          </section>
+          <section class="summary-item">
+            <div class="summary-label">Energy in window</div>
+            <div class="summary-value">${formatKwh(totalSite)} kWh</div>
+            <div class="summary-caption">Solar ${formatKwh(totalSolar)} kWh and grid ${formatKwh(totalGrid)} kWh.</div>
+          </section>
+          <section class="summary-item">
+            <div class="summary-label">Current meter positions</div>
+            <div class="summary-value">Solar ${formatKwh(latestSolarReading)} kWh</div>
+            <div class="summary-caption">Grid ${formatKwh(latestGridReading)} kWh cumulative on the meters.</div>
+          </section>
+          <section class="summary-item">
+            <div class="summary-label">Tariff impact</div>
+            <div class="summary-value">${tariff.rate > 0 ? formatCurrency(totalEnergyValue) : "Tariff needed"}</div>
+            <div class="summary-caption">${tariff.rate > 0 ? `Band ${tariff.band} selected at ${formatCurrency(tariff.rate)} per kWh.` : "Enter the AEDC tariff to calculate cost."}</div>
+          </section>
+        </div>
+        <div class="summary-callout">
+          <strong>Management note</strong>
+          Lifetime meter readings are cumulative totals already stored on the meters, while the energy totals in this report only cover the currently accessible export window. This keeps long-term meter position separate from period performance.
+        </div>
+      `;
+
+      dom.reportNote.innerHTML = `
+        <strong>Interpretation note:</strong> The lifetime solar meter reading of <strong>${formatKwh(latestSolarReading)} kWh</strong>
+        and lifetime grid meter reading of <strong>${formatKwh(latestGridReading)} kWh</strong> are cumulative values already stored on the meters.
+        The energy values of <strong>${formatKwh(totalSolar)} kWh</strong> for solar and <strong>${formatKwh(totalGrid)} kWh</strong> for grid are only the changes observed inside the current portal export window,
+        from <strong>${formatDay(periodStart)}</strong> to <strong>${formatDay(periodEnd)}</strong>. If the meters were installed earlier, these lifetime totals may include energy recorded before portal access was available.
+      `;
+
+      dom.charts.innerHTML = [
+        chartCard("dailyTotals", "Daily totals", "A compact comparison of solar generation, grid import, and estimated total site energy by day.", "daily summary"),
+        chartCard("costSplit", "Estimated energy value split", "This pie-style view converts the loaded period into monetary value using the selected AEDC tariff.", "daily summary"),
+        chartCard("meterSplit", "Current meter reading split", "A quick pie-style view of how the current cumulative readings are distributed between solar and grid meters.", "daily detail"),
+        chartCard("hourlyFlow", "Hourly energy movement", "This shows the derived energy per interval. For the solar meter, daytime spikes are generation; for the grid meter, this shows imported energy.", "hourly detail"),
+        chartCard("meterReadings", "Cumulative meter readings", "This preserves the original cumulative readings so the team can validate how the report was derived.", "hourly detail")
+      ].join("");
+
+      createChart("hourlyFlow", "line", {
+        labels: mergedHourly.labels,
+        datasets: [
+          lineDataset("Solar generation", mergedHourly.solar, "#f08c00", "rgba(240, 140, 0, 0.18)"),
+          lineDataset("Grid import", mergedHourly.grid, "#127fbf", "rgba(18, 127, 191, 0.16)"),
+          lineDataset("Estimated site energy", mergedHourly.total, "#2f855a", "rgba(47, 133, 90, 0.14)")
+        ]
+      }, { yTitle: "kWh per interval" });
+
+      createChart("dailyTotals", "bar", {
+        labels: daily.labels,
+        datasets: [
+          barDataset("Solar generation", daily.solar, "rgba(240, 140, 0, 0.78)"),
+          barDataset("Grid import", daily.grid, "rgba(18, 127, 191, 0.78)"),
+          barDataset("Estimated site energy", daily.total, "rgba(47, 133, 90, 0.72)")
+        ]
+      }, { stacked: false, yTitle: "kWh per day" });
+
+      const readingLabels = mergeReadingLabels(solar.records, grid.records);
+
+      createChart("meterReadings", "line", {
+        labels: readingLabels.map((item) => item.label),
+        datasets: [
+          lineDataset(solar.label, alignSeries(solar.records, readingLabels), "#f08c00", "rgba(240, 140, 0, 0.15)", true),
+          lineDataset(grid.label, alignSeries(grid.records, readingLabels), "#127fbf", "rgba(18, 127, 191, 0.15)", true)
+        ]
+      }, { yTitle: "Meter reading (kWh)", fill: false });
+
+      createChart("meterSplit", "doughnut", {
+        labels: ["Solar meter reading", "Grid meter reading"],
+        datasets: [{
+          data: [latestSolarReading, latestGridReading],
+          backgroundColor: ["rgba(240, 140, 0, 0.82)", "rgba(18, 127, 191, 0.82)"],
+          borderColor: ["#f08c00", "#127fbf"],
+          borderWidth: 1.5
+        }]
+      }, {
+        valueFormatter: (value) => `${formatKwh(value)} kWh`
+      });
+
+      createChart("costSplit", "doughnut", {
+        labels: ["Solar value", "Grid cost"],
+        datasets: [{
+          data: [solarEnergyValue, gridEnergyCost],
+          backgroundColor: ["rgba(47, 133, 90, 0.78)", "rgba(18, 127, 191, 0.78)"],
+          borderColor: ["#2f855a", "#127fbf"],
+          borderWidth: 1.5
+        }]
+      }, {
+        valueFormatter: (value) => formatCurrency(value)
+      });
+
+      updateChartControls();
+      updateChartVisibility();
+      renderDetailsTable(daily, solar, grid);
+      resizeCharts();
+    }
+
+    function renderDetailsTable(daily, solar, grid) {
+      const rows = daily.labels.map((label, index) => `
+        <tr>
+          <td><strong>${label}</strong></td>
+          <td>${formatKwh(daily.solar[index])} kWh</td>
+          <td>${formatKwh(daily.grid[index])} kWh</td>
+          <td>${formatKwh(daily.total[index])} kWh</td>
+        </tr>
+      `).join("");
+
+      dom.details.innerHTML = `
+        <h3>Daily summary</h3>
+        <p>
+          Solar source: ${solar.label} (${solar.meterNumber}). Grid source: ${grid.label} (${grid.meterNumber}).
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Solar generation</th>
+              <th>Grid import</th>
+              <th>Estimated site energy</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <ul class="notes">
+          <li>Energy values are derived from the change in cumulative meter readings between consecutive timestamps.</li>
+          <li>Rows flagged as anomalous are still visible in the cumulative reading chart, but the report relies on actual meter movement rather than the exported Usage Amount column.</li>
+          <li>If a file contains missing hours, the daily total remains valid, but the hourly chart will show wider gaps between available timestamps.</li>
+        </ul>
+      `;
+    }
+
+    function mergeIntervalsByLabel(solarIntervals, gridIntervals) {
+      const map = new Map();
+      for (const item of solarIntervals) {
+        const entry = map.get(item.timeKey) || { label: item.label, solar: 0, grid: 0 };
+        entry.solar += item.delta;
+        map.set(item.timeKey, entry);
+      }
+      for (const item of gridIntervals) {
+        const entry = map.get(item.timeKey) || { label: item.label, solar: 0, grid: 0 };
+        entry.grid += item.delta;
+        map.set(item.timeKey, entry);
+      }
+
+      const keys = Array.from(map.keys()).sort();
+      const labels = keys.map((key) => map.get(key).label);
+      const solar = keys.map((key) => map.get(key).solar);
+      const grid = keys.map((key) => map.get(key).grid);
+      const total = labels.map((_, index) => solar[index] + grid[index]);
+      return { labels, solar, grid, total };
+    }
+
+    function mergeIntervalsByDay(solarIntervals, gridIntervals) {
+      const map = new Map();
+      for (const item of solarIntervals) {
+        const entry = map.get(item.dayKey) || { solar: 0, grid: 0 };
+        entry.solar += item.delta;
+        map.set(item.dayKey, entry);
+      }
+      for (const item of gridIntervals) {
+        const entry = map.get(item.dayKey) || { solar: 0, grid: 0 };
+        entry.grid += item.delta;
+        map.set(item.dayKey, entry);
+      }
+
+      const labels = Array.from(map.keys()).sort();
+      const solar = labels.map((label) => map.get(label).solar);
+      const grid = labels.map((label) => map.get(label).grid);
+      const total = labels.map((_, index) => solar[index] + grid[index]);
+      return { labels, solar, grid, total };
+    }
+
+    function mergeReadingLabels(solarRecords, gridRecords) {
+      const labels = new Map();
+      for (const record of solarRecords) {
+        labels.set(record.date.toISOString(), formatHourLabel(record.date));
+      }
+      for (const record of gridRecords) {
+        labels.set(record.date.toISOString(), formatHourLabel(record.date));
+      }
+      return Array.from(labels.entries())
+        .sort((left, right) => left[0].localeCompare(right[0]))
+        .map(([timeKey, label]) => ({ timeKey, label }));
+    }
+
+    function alignSeries(records, labels) {
+      const valueByTimeKey = new Map(records.map((record) => [record.date.toISOString(), record.meterReading]));
+      return labels.map((item) => valueByTimeKey.has(item.timeKey) ? valueByTimeKey.get(item.timeKey) : null);
+    }
+
+    function createChart(canvasId, type, data, options = {}) {
+      const context = document.getElementById(canvasId);
+      const axisOptions = type === "doughnut" || type === "pie"
+        ? undefined
+        : {
+            x: {
+              ticks: { maxRotation: 65, minRotation: 50, color: "#52606d", autoSkip: true, maxTicksLimit: 14 },
+              grid: { display: false }
+            },
+            y: {
+              beginAtZero: true,
+              title: options.yTitle ? { display: true, text: options.yTitle } : undefined,
+              ticks: {
+                color: "#52606d",
+                callback: (value) => `${value} kWh`
+              },
+              grid: { color: "rgba(82, 96, 109, 0.12)" }
+            }
+          };
+
+      charts.push(new Chart(context, {
+        type,
+        data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          scales: axisOptions,
+          cutout: type === "doughnut" ? "62%" : undefined,
+          plugins: {
+            legend: {
+              labels: {
+                usePointStyle: true,
+                pointStyle: "circle"
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const value = type === "doughnut" || type === "pie"
+                    ? context.parsed
+                    : context.parsed.y;
+                  const formatter = options.valueFormatter || ((amount) => `${formatKwh(amount)} kWh`);
+                  return `${context.label || context.dataset.label}: ${formatter(value)}`;
+                }
+              }
+            }
+          }
+        }
+      }));
+    }
+
+    function lineDataset(label, data, borderColor, backgroundColor, fill = true) {
+      return {
+        label,
+        data,
+        borderColor,
+        backgroundColor,
+        fill,
+        tension: 0.25,
+        borderWidth: 2.4,
+        pointRadius: 1.8,
+        pointHoverRadius: 4
+      };
+    }
+
+    function barDataset(label, data, backgroundColor) {
+      return {
+        label,
+        data,
+        backgroundColor,
+        borderRadius: 8,
+        borderSkipped: false
+      };
+    }
+
+    function chartCard(id, title, description, viewGroup = "daily summary") {
+      const className = viewGroup.split(" ").map((item) => `chart-card--${item}`).join(" ");
+      return `
+        <section class="chart-card ${className}" data-view-group="${viewGroup}">
+          <h3>${title}</h3>
+          <p>${description}</p>
+          <div class="chart-wrap"><canvas id="${id}"></canvas></div>
+        </section>
+      `;
+    }
+
+    function statCard(label, value, caption = "", className = "", valueClass = "") {
+      return `
+        <section class="stat ${className}">
+          <div class="label">${label}</div>
+          <div class="value ${valueClass}">${value}</div>
+          ${caption ? `<div class="status">${caption}</div>` : ""}
+        </section>
+      `;
+    }
+
+    function clearCharts() {
+      while (charts.length) {
+        charts.pop().destroy();
+      }
+    }
+
+    function resizeCharts() {
+      for (const chart of charts) {
+        chart.resize();
+      }
+    }
+
+    function updateChartControls() {
+      dom.dailyViewBtn.classList.toggle("is-active", reportView.chartView === "daily");
+      dom.hourlyViewBtn.classList.toggle("is-active", reportView.chartView === "hourly");
+      dom.toggleDetailsBtn.classList.toggle("is-subtle-active", reportView.showDetailed || reportView.printing);
+      dom.toggleDetailsBtn.textContent = reportView.showDetailed || reportView.printing
+        ? "Hide detailed analysis"
+        : "Show detailed analysis";
+    }
+
+    function updateChartVisibility() {
+      const cards = dom.charts.querySelectorAll(".chart-card");
+      cards.forEach((card) => {
+        const groups = String(card.dataset.viewGroup || "").split(" ");
+        const isHourly = groups.includes("hourly");
+        const isDetail = groups.includes("detail");
+        const isDaily = groups.includes("daily");
+
+        let visible = false;
+        if (reportView.chartView === "daily") {
+          visible = isDaily;
+        } else if (reportView.chartView === "hourly") {
+          visible = isHourly || (isDaily && !isDetail);
+        }
+
+        if (isDetail && !reportView.showDetailed && !reportView.printing) {
+          visible = false;
+        }
+
+        card.classList.toggle("is-hidden", !visible);
+      });
+    }
+
+    function splitCsvLine(line) {
+      const cells = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        const nextChar = line[index + 1];
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            index += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          cells.push(current);
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+
+      cells.push(current);
+      return cells;
+    }
+
+    function toNumber(value) {
+      const parsed = Number(String(value).replace(/,/g, "").trim());
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function sumValues(values) {
+      return values.reduce((total, value) => total + value, 0);
+    }
+
+    function maxEntry(items, selector) {
+      if (!items.length) {
+        return null;
+      }
+      return items.reduce((best, item) => selector(item) > selector(best) ? item : best, items[0]);
+    }
+
+    function minDate(left, right) {
+      if (!left) return right;
+      if (!right) return left;
+      return left < right ? left : right;
+    }
+
+    function maxDate(left, right) {
+      if (!left) return right;
+      if (!right) return left;
+      return left > right ? left : right;
+    }
+
+    function formatHourLabel(date) {
+      return new Intl.DateTimeFormat("en-GB", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "UTC"
+      }).format(date).replace(",", "");
+    }
+
+    function formatDayKey(date) {
+      return new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        timeZone: "UTC"
+      }).format(date);
+    }
+
+    function formatDay(date) {
+      if (!date) {
+        return "N/A";
+      }
+      return new Intl.DateTimeFormat("en-GB", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC"
+      }).format(date);
+    }
+
+    function formatKwh(value) {
+      return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat("en-NG", {
+        style: "currency",
+        currency: "NGN",
+        maximumFractionDigits: 2
+      }).format(value);
+    }
+
+    function setStatus(message, isError = false) {
+      dom.status.textContent = message;
+      dom.status.style.color = isError ? "var(--alert)" : "var(--muted)";
+    }
+  </script>
+</body>
+</html>

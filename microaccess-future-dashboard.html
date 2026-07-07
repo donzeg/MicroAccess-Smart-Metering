@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Micro Access - Grid Command</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy-950: #061427;
+      --navy-900: #0b1f3a;
+      --navy-800: #123158;
+      --sky-500: #35b8ff;
+      --sky-400: #6cd2ff;
+      --sky-300: #9fe4ff;
+      --white-100: #f4faff;
+      --white-200: #d7e9f8;
+      --line: rgba(109, 200, 255, 0.26);
+      --glass: rgba(11, 31, 58, 0.64);
+      --ok: #5ee9b5;
+      --warn: #ffd166;
+      --danger: #ff7b9a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Manrope", sans-serif;
+      background: radial-gradient(circle at 12% 0%, #123b6f 0%, transparent 42%),
+        radial-gradient(circle at 84% 0%, #0e4e84 0%, transparent 32%),
+        linear-gradient(165deg, var(--navy-950) 0%, var(--navy-900) 50%, #0a2342 100%);
+      color: var(--white-100);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        90deg,
+        rgba(130, 214, 255, 0.05) 0,
+        rgba(130, 214, 255, 0.05) 1px,
+        transparent 1px,
+        transparent 70px
+      );
+      opacity: 0.6;
+      z-index: 0;
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      padding: 26px 26px 34px;
+      display: grid;
+      gap: 18px;
+      max-width: 1580px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(160deg, rgba(14, 39, 71, 0.88), rgba(9, 28, 54, 0.65));
+      backdrop-filter: blur(8px);
+      border-radius: 16px;
+      box-shadow: 0 14px 28px rgba(3, 12, 25, 0.45);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      border: 1px solid rgba(165, 227, 255, 0.6);
+      background: radial-gradient(circle at 30% 30%, #8fe3ff 0%, #2b9ee7 38%, #0f315f 100%);
+      position: relative;
+      box-shadow: 0 0 0 4px rgba(69, 170, 225, 0.12), 0 0 28px rgba(58, 177, 249, 0.25);
+    }
+
+    .logo::after {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border-radius: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      transform: rotate(45deg);
+    }
+
+    .brand h1 {
+      font-family: "Oxanium", sans-serif;
+      font-size: 1.05rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #e7f6ff;
+    }
+
+    .brand p {
+      font-size: 0.73rem;
+      color: var(--sky-300);
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+      text-transform: uppercase;
+    }
+
+    .statusband {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .status-pill {
+      border: 1px solid rgba(125, 208, 255, 0.38);
+      background: rgba(19, 59, 98, 0.44);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.73rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--white-100);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      display: inline-block;
+      margin-right: 6px;
+      box-shadow: 0 0 12px var(--ok);
+      animation: pulse 1.4s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.7; }
+      70% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.7; }
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1.7fr 1.1fr;
+      gap: 18px;
+    }
+
+    .module {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(145deg, rgba(13, 35, 63, 0.88), rgba(9, 29, 54, 0.64));
+      backdrop-filter: blur(8px);
+      box-shadow: 0 16px 26px rgba(2, 12, 25, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .module::before {
+      content: "";
+      position: absolute;
+      top: -120px;
+      right: -50px;
+      width: 240px;
+      height: 240px;
+      background: radial-gradient(circle, rgba(88, 192, 255, 0.22), transparent 65%);
+      pointer-events: none;
+    }
+
+    .m-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid rgba(109, 200, 255, 0.2);
+    }
+
+    .m-title {
+      font-size: 0.76rem;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: var(--sky-300);
+      font-family: "Oxanium", sans-serif;
+    }
+
+    .m-body {
+      padding: 16px 18px 20px;
+    }
+
+    .ring-wrap {
+      display: grid;
+      place-items: center;
+      padding-top: 6px;
+      padding-bottom: 16px;
+    }
+
+    .ring {
+      width: 178px;
+      height: 178px;
+      border-radius: 50%;
+      background: conic-gradient(var(--sky-500) 0deg 320deg, rgba(84, 131, 170, 0.25) 320deg 360deg);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 0 12px rgba(27, 76, 116, 0.35), 0 0 42px rgba(57, 176, 252, 0.28);
+      animation: spinSlow 16s linear infinite;
+    }
+
+    .ring::before {
+      content: "";
+      width: 133px;
+      height: 133px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #173f68, #0a2342 70%);
+      border: 1px solid rgba(142, 221, 255, 0.34);
+    }
+
+    @keyframes spinSlow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .ring-center {
+      position: absolute;
+      text-align: center;
+    }
+
+    .ring-center strong {
+      display: block;
+      font-family: "Oxanium", sans-serif;
+      font-size: 2rem;
+      line-height: 1;
+    }
+
+    .ring-center span {
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--white-200);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .metric-chip {
+      border: 1px solid rgba(114, 203, 255, 0.33);
+      border-radius: 14px;
+      padding: 10px 11px;
+      background: rgba(16, 47, 81, 0.44);
+    }
+
+    .metric-chip small {
+      display: block;
+      font-size: 0.66rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--sky-300);
+      margin-bottom: 5px;
+    }
+
+    .metric-chip strong {
+      font-size: 1.05rem;
+      font-family: "Oxanium", sans-serif;
+      color: #ecf8ff;
+    }
+
+    .pulse-lanes {
+      display: grid;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 130px 1fr 68px;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .lane label {
+      font-size: 0.73rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--white-200);
+    }
+
+    .track {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(108, 178, 223, 0.22);
+      border: 1px solid rgba(132, 207, 255, 0.3);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .flow {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #6ad0ff 0%, #3dafff 50%, #97ecff 100%);
+      position: relative;
+      box-shadow: 0 0 16px rgba(79, 192, 255, 0.45);
+    }
+
+    .flow::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -35%;
+      width: 35%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+      animation: slide 2.8s linear infinite;
+    }
+
+    @keyframes slide {
+      to { left: 120%; }
+    }
+
+    .lane span {
+      text-align: right;
+      font-size: 0.73rem;
+      color: var(--sky-300);
+      font-family: "Oxanium", sans-serif;
+    }
+
+    .directive-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .directive {
+      border: 1px solid rgba(121, 206, 255, 0.35);
+      border-radius: 14px;
+      padding: 12px 13px;
+      background: rgba(16, 52, 87, 0.42);
+      transition: transform 0.22s ease, border-color 0.22s ease;
+    }
+
+    .directive:hover {
+      transform: translateX(5px);
+      border-color: rgba(185, 234, 255, 0.74);
+    }
+
+    .directive h4 {
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--white-100);
+      margin-bottom: 6px;
+      font-family: "Oxanium", sans-serif;
+    }
+
+    .directive p {
+      font-size: 0.75rem;
+      line-height: 1.45;
+      color: var(--white-200);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 18px;
+    }
+
+    .topology-canvas {
+      position: relative;
+      height: 330px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(9, 30, 55, 0.72), rgba(8, 24, 44, 0.85));
+      border: 1px solid rgba(126, 206, 255, 0.24);
+      overflow: hidden;
+    }
+
+    .grid-lines {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(116, 203, 255, 0.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(116, 203, 255, 0.09) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.6;
+    }
+
+    .node {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #a7e8ff;
+      box-shadow: 0 0 0 7px rgba(95, 189, 255, 0.18), 0 0 14px rgba(120, 212, 255, 0.5);
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 1px solid rgba(139, 220, 255, 0.6);
+      animation: radar 2.6s ease-out infinite;
+    }
+
+    @keyframes radar {
+      from { transform: scale(0.3); opacity: 0.9; }
+      to { transform: scale(1.7); opacity: 0; }
+    }
+
+    .beam {
+      position: absolute;
+      height: 2px;
+      transform-origin: left center;
+      background: linear-gradient(90deg, rgba(87, 194, 255, 0.05), rgba(148, 231, 255, 0.95), rgba(87, 194, 255, 0.05));
+      box-shadow: 0 0 12px rgba(100, 200, 255, 0.4);
+    }
+
+    .small-kpis {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(116, 201, 255, 0.28);
+      background: rgba(15, 46, 80, 0.38);
+      align-items: center;
+    }
+
+    .kpi-row span {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--white-200);
+    }
+
+    .kpi-row strong {
+      font-family: "Oxanium", sans-serif;
+      font-size: 0.95rem;
+      color: #eaf8ff;
+    }
+
+    .events {
+      display: grid;
+      gap: 10px;
+      margin-top: 2px;
+    }
+
+    .event {
+      border-left: 3px solid var(--sky-400);
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(14, 42, 71, 0.45);
+      display: grid;
+      gap: 4px;
+    }
+
+    .event-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.73rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #d9effd;
+    }
+
+    .tag {
+      font-size: 0.67rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+    }
+
+    .tag.ok { border-color: rgba(94, 233, 181, 0.7); color: var(--ok); }
+    .tag.warn { border-color: rgba(255, 209, 102, 0.7); color: var(--warn); }
+    .tag.danger { border-color: rgba(255, 123, 154, 0.7); color: var(--danger); }
+
+    .event p {
+      font-size: 0.74rem;
+      color: var(--white-200);
+      line-height: 1.4;
+    }
+
+    .footerline {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(11, 34, 62, 0.65);
+      padding: 10px 12px;
+      font-size: 0.72rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--sky-300);
+    }
+
+    @media (max-width: 1220px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topology-canvas {
+        height: 280px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        padding: 14px;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .statusband {
+        justify-content: flex-start;
+      }
+
+      .lane {
+        grid-template-columns: 1fr;
+      }
+
+      .lane span {
+        text-align: left;
+      }
+
+      .ring {
+        width: 156px;
+        height: 156px;
+      }
+
+      .ring::before {
+        width: 118px;
+        height: 118px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>Micro Access</h1>
+          <p>Grid Intelligence Console</p>
+        </div>
+      </div>
+      <div class="statusband">
+        <div class="status-pill"><span class="live-dot"></span>System Active</div>
+        <div class="status-pill">On-Prem Node: Lagos-HQ-01</div>
+        <div class="status-pill" id="clock">Sync: --:--:--</div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <article class="module">
+        <div class="m-head">
+          <h2 class="m-title">Grid Health Index</h2>
+          <span class="status-pill">Realtime</span>
+        </div>
+        <div class="m-body">
+          <div class="ring-wrap">
+            <div class="ring"></div>
+            <div class="ring-center">
+              <strong>94.6%</strong>
+              <span>Stability</span>
+            </div>
+          </div>
+          <div class="metrics">
+            <div class="metric-chip">
+              <small>Online Meters</small>
+              <strong>2,691</strong>
+            </div>
+            <div class="metric-chip">
+              <small>Active Homes</small>
+              <strong>1,438</strong>
+            </div>
+            <div class="metric-chip">
+              <small>Current Load</small>
+              <strong>4.8 MW</strong>
+            </div>
+            <div class="metric-chip">
+              <small>Fault Queue</small>
+              <strong>09</strong>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="module">
+        <div class="m-head">
+          <h2 class="m-title">Energy Pulse Lanes</h2>
+          <span class="status-pill">7 Min Window</span>
+        </div>
+        <div class="m-body pulse-lanes">
+          <div class="lane">
+            <label>Residential Cluster</label>
+            <div class="track"><div class="flow" style="width: 82%"></div></div>
+            <span>82%</span>
+          </div>
+          <div class="lane">
+            <label>Commercial District</label>
+            <div class="track"><div class="flow" style="width: 68%"></div></div>
+            <span>68%</span>
+          </div>
+          <div class="lane">
+            <label>Industrial Route</label>
+            <div class="track"><div class="flow" style="width: 91%"></div></div>
+            <span>91%</span>
+          </div>
+          <div class="lane">
+            <label>Perimeter Nodes</label>
+            <div class="track"><div class="flow" style="width: 57%"></div></div>
+            <span>57%</span>
+          </div>
+          <div class="lane">
+            <label>Critical Services</label>
+            <div class="track"><div class="flow" style="width: 77%"></div></div>
+            <span>77%</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="module">
+        <div class="m-head">
+          <h2 class="m-title">Operator Actions</h2>
+          <span class="status-pill">Directives</span>
+        </div>
+        <div class="m-body directive-grid">
+          <div class="directive">
+            <h4>Smart Reconnect Batch</h4>
+            <p>Queue reconnect for meters stable for 10 mins after outage recovery.</p>
+          </div>
+          <div class="directive">
+            <h4>Tariff Wave Apply</h4>
+            <p>Push zone tariff update to Cluster C and monitor abnormal consumption spikes.</p>
+          </div>
+          <div class="directive">
+            <h4>Precision Alert Sweep</h4>
+            <p>Trigger high-usage anomaly scan for all prepaid meters under 20 kWh remaining.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <article class="module">
+        <div class="m-head">
+          <h2 class="m-title">Meter Topology Stream</h2>
+          <span class="status-pill">Live Map</span>
+        </div>
+        <div class="m-body">
+          <div class="topology-canvas">
+            <div class="grid-lines"></div>
+
+            <div class="node" style="left: 8%; top: 20%"></div>
+            <div class="node" style="left: 26%; top: 36%"></div>
+            <div class="node" style="left: 46%; top: 24%"></div>
+            <div class="node" style="left: 67%; top: 42%"></div>
+            <div class="node" style="left: 80%; top: 26%"></div>
+            <div class="node" style="left: 35%; top: 65%"></div>
+            <div class="node" style="left: 58%; top: 70%"></div>
+
+            <div class="beam" style="left: 9%; top: 22%; width: 21%; transform: rotate(18deg)"></div>
+            <div class="beam" style="left: 27%; top: 38%; width: 24%; transform: rotate(-19deg)"></div>
+            <div class="beam" style="left: 47%; top: 25%; width: 23%; transform: rotate(26deg)"></div>
+            <div class="beam" style="left: 67%; top: 42%; width: 16%; transform: rotate(-32deg)"></div>
+            <div class="beam" style="left: 38%; top: 67%; width: 22%; transform: rotate(8deg)"></div>
+            <div class="beam" style="left: 29%; top: 39%; width: 28%; transform: rotate(53deg)"></div>
+          </div>
+
+          <div class="small-kpis">
+            <div class="kpi-row"><span>Avg Latency</span><strong>86 ms</strong></div>
+            <div class="kpi-row"><span>Sync Cycle</span><strong>05:00 min</strong></div>
+            <div class="kpi-row"><span>Steama API Budget</span><strong>6.2 / 10 req-s</strong></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="module">
+        <div class="m-head">
+          <h2 class="m-title">Event Stream</h2>
+          <span class="status-pill">Last 30 mins</span>
+        </div>
+        <div class="m-body events">
+          <div class="event">
+            <div class="event-head">
+              <span>MTR-2847 | Comms restored</span>
+              <span class="tag ok">Resolved</span>
+            </div>
+            <p>Signal quality recovered to 93%. Node returned to normal telemetry cadence.</p>
+          </div>
+
+          <div class="event">
+            <div class="event-head">
+              <span>MTR-1532 | Low balance threshold</span>
+              <span class="tag warn">Watch</span>
+            </div>
+            <p>Balance at N 1,250. Push reminder workflow with preferred payment link.</p>
+          </div>
+
+          <div class="event">
+            <div class="event-head">
+              <span>Cluster C | Tariff sync delayed</span>
+              <span class="tag danger">Priority</span>
+            </div>
+            <p>Retry path engaged. Waiting for third gateway acknowledgement.</p>
+          </div>
+
+          <div class="event">
+            <div class="event-head">
+              <span>Purchase | Agent channel verified</span>
+              <span class="tag ok">Stable</span>
+            </div>
+            <p>42 transactions settled in last 10 minutes without reconciliation drift.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footerline">
+      <span>Micro Access On-Prem Command Fabric</span>
+      <span>Cloudflare Tunnel Edge Protected</span>
+      <span>Data Precision Mode Enabled</span>
+    </footer>
+  </div>
+
+  <script>
+    const clockEl = document.getElementById("clock");
+
+    function setClock() {
+      const now = new Date();
+      const t = now.toLocaleTimeString("en-GB", { hour12: false });
+      clockEl.textContent = "Sync: " + t;
+    }
+
+    setClock();
+    setInterval(setClock, 1000);
+  </script>
+</body>
+</html>

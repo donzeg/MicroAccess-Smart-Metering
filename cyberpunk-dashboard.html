@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GUDU METER - Cyberpunk Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --neon-cyan: #00fff9;
+            --neon-pink: #ff006e;
+            --neon-yellow: #ffea00;
+            --electric-blue: #3a86ff;
+            --bg-dark: #0a0a0a;
+            --bg-darker: #000000;
+            --text: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            overflow-x: hidden;
+        }
+
+        /* Animated scanlines */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 249, 0.03) 0px,
+                transparent 1px,
+                transparent 2px,
+                rgba(0, 255, 249, 0.03) 3px
+            );
+            pointer-events: none;
+            z-index: 9999;
+            animation: scanlines 10s linear infinite;
+        }
+
+        @keyframes scanlines {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(100px); }
+        }
+
+        /* Glitch effect background */
+        .glitch-bg {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(ellipse at top, rgba(58, 134, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom, rgba(255, 0, 110, 0.1) 0%, transparent 50%);
+            z-index: -1;
+        }
+
+        /* Grid overlay */
+        .grid {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(0, 255, 249, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 249, 0.05) 1px, transparent 1px);
+            background-size: 50px 50px;
+            z-index: -1;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            border-right: 2px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 255, 249, 0.3);
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .logo {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 40px;
+            border-bottom: 2px solid var(--neon-cyan);
+            padding-bottom: 20px;
+        }
+
+        .logo-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 10px var(--neon-cyan), 0 0 20px var(--neon-cyan);
+            letter-spacing: 2px;
+        }
+
+        .logo-tagline {
+            font-size: 10px;
+            color: var(--neon-pink);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            margin-bottom: 4px;
+            border-left: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+
+        .nav-item:hover {
+            border-left-color: var(--neon-pink);
+            background: rgba(255, 0, 110, 0.1);
+            transform: translateX(5px);
+        }
+
+        .nav-item.active {
+            border-left-color: var(--neon-cyan);
+            background: rgba(0, 255, 249, 0.1);
+            color: var(--neon-cyan);
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            padding: 32px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 2px solid rgba(0, 255, 249, 0.3);
+        }
+
+        .header-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 36px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .system-status {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: glow 2s infinite;
+        }
+
+        .status-dot.online {
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        @keyframes glow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Stats Grid - NO CARDS! */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-terminal {
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid var(--neon-cyan);
+            padding: 20px;
+            position: relative;
+            clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%);
+            transition: all 0.3s;
+        }
+
+        .stat-terminal::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            background: var(--bg-dark);
+            clip-path: polygon(0 0, 100% 100%, 100% 0);
+        }
+
+        .stat-terminal:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0, 255, 249, 0.4);
+            border-color: var(--neon-pink);
+        }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--neon-cyan);
+            margin-bottom: 12px;
+        }
+
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 42px;
+            font-weight: 900;
+            color: var(--neon-pink);
+            text-shadow: 0 0 10px var(--neon-pink);
+            line-height: 1;
+        }
+
+        .stat-change {
+            font-size: 11px;
+            margin-top: 8px;
+            color: var(--neon-yellow);
+        }
+
+        /* Data Visualization */
+        .data-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .terminal-window {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--electric-blue);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .terminal-header {
+            background: rgba(58, 134, 255, 0.2);
+            border-bottom: 1px solid var(--electric-blue);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .terminal-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--electric-blue);
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-btn.close { background: #ff006e; box-shadow: 0 0 5px #ff006e; }
+        .terminal-btn.minimize { background: #ffea00; box-shadow: 0 0 5px #ffea00; }
+        .terminal-btn.maximize { background: #00fff9; box-shadow: 0 0 5px #00fff9; }
+
+        .terminal-body {
+            padding: 24px;
+        }
+
+        /* Hexagonal stats */
+        .hex-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .hex-stat {
+            width: 120px;
+            height: 140px;
+            position: relative;
+        }
+
+        .hexagon {
+            width: 100%;
+            height: 100%;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            background: linear-gradient(135deg, rgba(0, 255, 249, 0.2), rgba(255, 0, 110, 0.2));
+            border: 2px solid var(--neon-cyan);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .hexagon:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 30px var(--neon-cyan);
+        }
+
+        .hex-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+        }
+
+        .hex-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+
+        /* Alert Table - Terminal Style */
+        .alert-terminal {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--neon-pink);
+            margin-bottom: 32px;
+        }
+
+        .alert-header {
+            background: rgba(255, 0, 110, 0.2);
+            border-bottom: 1px solid var(--neon-pink);
+            padding: 16px 20px;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--neon-pink);
+        }
+
+        .alert-list {
+            padding: 20px;
+        }
+
+        .alert-item {
+            display: grid;
+            grid-template-columns: 80px 120px 1fr 120px 100px 120px;
+            gap: 16px;
+            padding: 16px;
+            border-left: 3px solid transparent;
+            margin-bottom: 8px;
+            transition: all 0.3s;
+            align-items: center;
+        }
+
+        .alert-item:hover {
+            background: rgba(255, 0, 110, 0.1);
+            border-left-color: var(--neon-pink);
+            transform: translateX(5px);
+        }
+
+        .alert-time {
+            font-size: 11px;
+            color: var(--neon-yellow);
+        }
+
+        .alert-meter {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--neon-cyan);
+        }
+
+        .alert-type {
+            font-size: 11px;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: 1px solid;
+            text-align: center;
+        }
+
+        .status-badge.critical {
+            color: var(--neon-pink);
+            border-color: var(--neon-pink);
+            box-shadow: 0 0 10px rgba(255, 0, 110, 0.3);
+        }
+
+        .status-badge.warning {
+            color: var(--neon-yellow);
+            border-color: var(--neon-yellow);
+            box-shadow: 0 0 10px rgba(255, 234, 0, 0.3);
+        }
+
+        .status-badge.resolved {
+            color: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 255, 249, 0.3);
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            text-transform: uppercase;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        .action-btn:hover {
+            background: var(--neon-cyan);
+            color: var(--bg-dark);
+            box-shadow: 0 0 20px var(--neon-cyan);
+        }
+
+        /* Chart area */
+        .chart-visual {
+            height: 200px;
+            background: 
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0, 255, 249, 0.1) 0px,
+                    transparent 1px,
+                    transparent 40px,
+                    rgba(0, 255, 249, 0.1) 41px
+                ),
+                repeating-linear-gradient(
+                    90deg,
+                    rgba(0, 255, 249, 0.1) 0px,
+                    transparent 1px,
+                    transparent 60px,
+                    rgba(0, 255, 249, 0.1) 61px
+                );
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-around;
+            padding: 20px;
+        }
+
+        .bar {
+            width: 40px;
+            background: linear-gradient(to top, var(--neon-cyan), var(--neon-pink));
+            box-shadow: 0 0 20px var(--neon-cyan);
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .bar:hover {
+            box-shadow: 0 0 30px var(--neon-pink);
+        }
+
+        .bar-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: var(--neon-cyan);
+        }
+
+        /* Responsive */
+        @media (max-width: 1400px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 1200px) {
+            .data-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="glitch-bg"></div>
+    <div class="grid"></div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <div class="logo-text">GUDU</div>
+            <div class="logo-tagline">POWER GRID SYSTEM</div>
+        </div>
+
+        <div class="nav-item active">>> CONTROL_PANEL</div>
+        <div class="nav-item">>> USERS.DB</div>
+        <div class="nav-item">>> METERS.SYS</div>
+        <div class="nav-item">>> TRANSACTIONS.LOG</div>
+        <div class="nav-item">>> ALERTS.MONITOR</div>
+        <div class="nav-item">>> ANALYTICS.EXE</div>
+        <div class="nav-item">>> AGENTS.NET</div>
+        <div class="nav-item">>> NETWORK.GRID</div>
+        <div class="nav-item">>> REPORTS.GEN</div>
+        <div class="nav-item">>> SYSTEM.CFG</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Header -->
+        <div class="header">
+            <h1 class="header-title">CONTROL PANEL</h1>
+            <div class="system-status">
+                <div class="status-item">
+                    <div class="status-dot online"></div>
+                    SYSTEM ONLINE
+                </div>
+                <div class="status-item">
+                    UPTIME: 98.7%
+                </div>
+                <div class="status-item">
+                    LOCAL_HOST:3000
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-terminal">
+                <div class="stat-label">TOTAL METERS</div>
+                <div class="stat-value">2,847</div>
+                <div class="stat-change">▲ +12.5% GROWTH</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">ONLINE</div>
+                <div class="stat-value">2,691</div>
+                <div class="stat-change">▲ 94.5% UPTIME</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">OFFLINE</div>
+                <div class="stat-value">156</div>
+                <div class="stat-change">⚠ ATTENTION REQ</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">REVENUE/DAY</div>
+                <div class="stat-value">₦1.2M</div>
+                <div class="stat-change">▲ +23.8% vs YEST</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">ACTIVE USERS</div>
+                <div class="stat-value">1,432</div>
+                <div class="stat-change">▲ +8.2% GROWTH</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">TXN TODAY</div>
+                <div class="stat-value">342</div>
+                <div class="stat-change">▲ +15.3% INC</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">ALERTS</div>
+                <div class="stat-value">12</div>
+                <div class="stat-change">▼ -25% RESOLVED</div>
+            </div>
+
+            <div class="stat-terminal">
+                <div class="stat-label">SYS UPTIME</div>
+                <div class="stat-value">98.7%</div>
+                <div class="stat-change">✓ EXCELLENT</div>
+            </div>
+        </div>
+
+        <!-- Data Visualization -->
+        <div class="data-section">
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-title">ENERGY.CONSUMPTION.TREND [7D]</div>
+                    <div class="terminal-controls">
+                        <div class="terminal-btn close"></div>
+                        <div class="terminal-btn minimize"></div>
+                        <div class="terminal-btn maximize"></div>
+                    </div>
+                </div>
+                <div class="terminal-body">
+                    <div class="chart-visual">
+                        <div class="bar" style="height: 60%;">
+                            <div class="bar-label">MON</div>
+                        </div>
+                        <div class="bar" style="height: 75%;">
+                            <div class="bar-label">TUE</div>
+                        </div>
+                        <div class="bar" style="height: 50%;">
+                            <div class="bar-label">WED</div>
+                        </div>
+                        <div class="bar" style="height: 85%;">
+                            <div class="bar-label">THU</div>
+                        </div>
+                        <div class="bar" style="height: 70%;">
+                            <div class="bar-label">FRI</div>
+                        </div>
+                        <div class="bar" style="height: 45%;">
+                            <div class="bar-label">SAT</div>
+                        </div>
+                        <div class="bar" style="height: 90%;">
+                            <div class="bar-label">SUN</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-title">METER.STATUS</div>
+                    <div class="terminal-controls">
+                        <div class="terminal-btn close"></div>
+                        <div class="terminal-btn minimize"></div>
+                        <div class="terminal-btn maximize"></div>
+                    </div>
+                </div>
+                <div class="terminal-body">
+                    <div class="hex-grid">
+                        <div class="hex-stat">
+                            <div class="hexagon">
+                                <div class="hex-value">2.7K</div>
+                                <div class="hex-label">ONLINE</div>
+                            </div>
+                        </div>
+                        <div class="hex-stat">
+                            <div class="hexagon">
+                                <div class="hex-value">156</div>
+                                <div class="hex-label">OFFLINE</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Terminal -->
+        <div class="alert-terminal">
+            <div class="alert-header">
+                >>> ALERT.MONITOR [REALTIME]
+            </div>
+            <div class="alert-list">
+                <div class="alert-item">
+                    <div class="alert-time">02:00:00</div>
+                    <div class="alert-meter">MTR-2847</div>
+                    <div class="alert-type">John Doe / COMMS_OUTAGE</div>
+                    <div class="status-badge critical">CRITICAL</div>
+                    <div class="alert-type">2 MINS AGO</div>
+                    <button class="action-btn">INVESTIGATE</button>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-time">01:45:00</div>
+                    <div class="alert-meter">MTR-1532</div>
+                    <div class="alert-type">Jane Smith / LOW_BALANCE</div>
+                    <div class="status-badge warning">WARNING</div>
+                    <div class="alert-type">15 MINS AGO</div>
+                    <button class="action-btn">SEND SMS</button>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-time">01:00:00</div>
+                    <div class="alert-meter">MTR-0942</div>
+                    <div class="alert-type">Ahmed Ibrahim / HIGH_USAGE</div>
+                    <div class="status-badge warning">WARNING</div>
+                    <div class="alert-type">1 HOUR AGO</div>
+                    <button class="action-btn">CHECK</button>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-time">00:00:00</div>
+                    <div class="alert-meter">MTR-3421</div>
+                    <div class="alert-type">Sarah Johnson / RESTORED</div>
+                    <div class="status-badge resolved">RESOLVED</div>
+                    <div class="alert-type">2 HOURS AGO</div>
+                    <button class="action-btn">DETAILS</button>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-time">23:00:00</div>
+                    <div class="alert-meter">MTR-5673</div>
+                    <div class="alert-type">Michael Brown / COMMS_RESTORED</div>
+                    <div class="status-badge resolved">RESOLVED</div>
+                    <div class="alert-type">3 HOURS AGO</div>
+                    <button class="action-btn">DETAILS</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add glitch effect on hover
+        const stats = document.querySelectorAll('.stat-terminal');
+        stats.forEach(stat => {
+            stat.addEventListener('mouseenter', function() {
+                this.style.animation = 'glitch 0.3s';
+            });
+            stat.addEventListener('animationend', function() {
+                this.style.animation = '';
+            });
+        });
+
+        // Simulate real-time updates
+        setInterval(() => {
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            document.querySelectorAll('.status-item')[2].textContent = 'TIME: ' + time;
+        }, 1000);
+    </script>
+
+    <style>
+        @keyframes glitch {
+            0% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(-2px, -2px); }
+            60% { transform: translate(2px, 2px); }
+            80% { transform: translate(2px, -2px); }
+            100% { transform: translate(0); }
+        }
+    </style>
+</body>
+</html>
