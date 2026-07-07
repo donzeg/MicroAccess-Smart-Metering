@@ -8,11 +8,13 @@ describe('PurchaseService', () => {
     const service = new PurchaseService(new ProviderClient());
 
     const initiated = service.initiate('1622913', 5000, 'corr-1');
+    const initiatedState = initiated.state;
     const pending = service.markPaymentConfirmed(initiated.id, 'corr-2');
+    const pendingState = pending.state;
     const credited = await service.creditViaProvider(initiated.id, 'corr-3');
 
-    expect(initiated.state).toBe('initiated');
-    expect(pending.state).toBe('payment_confirmed_credit_pending');
+    expect(initiatedState).toBe('initiated');
+    expect(pendingState).toBe('payment_confirmed_credit_pending');
     expect(credited.state).toBe('credited');
     expect(credited.providerReference).toBeTruthy();
     expect(credited.transitions).toHaveLength(3);

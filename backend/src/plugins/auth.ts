@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import fp from 'fastify-plugin';
 import jwt from 'jsonwebtoken';
 
 import { env } from '../config/env.js';
@@ -13,7 +14,7 @@ declare module 'fastify' {
   }
 }
 
-export const authPlugin = async (app: import('fastify').FastifyInstance): Promise<void> => {
+export const authPlugin = fp(async (app: import('fastify').FastifyInstance): Promise<void> => {
   app.decorate('verifyJwt', async (request: FastifyRequest, reply: FastifyReply) => {
     const authorization = request.headers.authorization;
     if (!authorization?.startsWith('Bearer ')) {
@@ -28,4 +29,4 @@ export const authPlugin = async (app: import('fastify').FastifyInstance): Promis
       await reply.code(401).send({ message: 'Invalid token' });
     }
   });
-};
+});
