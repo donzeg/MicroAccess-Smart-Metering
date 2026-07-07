@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { ProviderClient } from './providerClient.js';
+import type { CreditProvider } from './providerClient.js';
 import type { PurchaseRecord, PurchaseState } from '../types/purchase.js';
 
 export class PurchaseService {
   private readonly purchases = new Map<string, PurchaseRecord>();
 
-  constructor(private readonly providerClient: ProviderClient) {}
+  constructor(private readonly providerClient: CreditProvider) {}
 
   initiate(customerId: string, amount: number, correlationId: string): PurchaseRecord {
     const now = new Date().toISOString();

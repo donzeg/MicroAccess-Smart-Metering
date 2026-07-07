@@ -5,8 +5,14 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 ## Included in this first build slice
 - JWT login endpoint (`POST /api/v1/auth/login`)
 - Protected customer-meter mapping endpoint (`GET /api/v1/customers/:customerId/meters`)
-- Purchase lifecycle endpoints with idempotent provider credit simulation
+- Purchase lifecycle endpoints with idempotent provider credit support
 - Unit and integration tests (Vitest)
+
+## Provider integration modes
+- Default mode: local idempotent provider simulation for development and tests.
+- Live mode: set `STEAMA_ENABLED=true` and provide service credentials in `.env`.
+- In live mode, backend posts customer top-up to `POST /customers/{id}/transactions/` through Steama token auth from `/get-token/`.
+- Web/mobile clients never call Steama directly.
 
 ## Lifecycle endpoints
 - `POST /api/v1/purchases/initiate`
