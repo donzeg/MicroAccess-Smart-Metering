@@ -1,6 +1,23 @@
+import { createHmac, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../../src/app.js';
+import { canonicalStringify } from '../../src/utils/canonicalJson.js';
+
+const callbackSecret = 'change-me-callback-secret';
+
+const buildCallbackHeaders = (payload: unknown, callbackId: string = randomUUID()): Record<string, string> => {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = createHmac('sha256', callbackSecret)
+    .update(`${timestamp}.${callbackId}.${canonicalStringify(payload)}`)
+    .digest('hex');
+
+  return {
+    'x-callback-id': callbackId,
+    'x-callback-timestamp': timestamp,
+    'x-callback-signature': signature
+  };
+};
 
 describe('MSM backend integration', () => {
   const app = buildApp();
@@ -92,6 +109,10 @@ describe('MSM backend integration', () => {
     const callback = await app.inject({
       method: 'POST',
       url: '/api/v1/payments/callback',
+      headers: buildCallbackHeaders({
+        purchaseId,
+        status: 'confirmed'
+      }),
       payload: {
         purchaseId,
         status: 'confirmed'
@@ -163,5 +184,68 @@ describe('MSM backend integration', () => {
     });
 
     expect(response.statusCode).toBe(403);
+  });
+
+  it('rejects callback with invalid signature', async () => {
+    const initiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 1800 }
+    });
+    const purchaseId = initiated.json().id as string;
+
+    const headers = buildCallbackHeaders({
+      purchaseId,
+      status: 'confirmed'
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/payments/callback',
+      headers: {
+        ...headers,
+        'x-callback-signature': 'invalid'
+      },
+      payload: {
+        purchaseId,
+        status: 'confirmed'
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('rejects replayed callback id', async () => {
+    const initiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 2200 }
+    });
+    const purchaseId = initiated.json().id as string;
+
+    const payload = {
+      purchaseId,
+      status: 'confirmed' as const
+    };
+    const headers = buildCallbackHeaders(payload, 'callback-replay-id');
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/payments/callback',
+      headers,
+      payload
+    });
+    expect(first.statusCode).toBe(200);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/v1/payments/callback',
+      headers,
+      payload
+    });
+
+    expect(replay.statusCode).toBe(401);
   });
 });

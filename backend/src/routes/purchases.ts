@@ -71,6 +71,11 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
       return reply.code(400).send({ message: 'Invalid callback payload', errors: parsed.error.flatten() });
     }
 
+    const verification = app.callbackSecurityService.verify(request.headers as Record<string, unknown>, parsed.data);
+    if (!verification.ok) {
+      return reply.code(401).send({ message: 'Invalid callback authentication', reason: verification.reason });
+    }
+
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
 
     try {

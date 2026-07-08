@@ -15,6 +15,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMappingRoutes } from './routes/mappings.js';
 import { registerPurchaseRoutes } from './routes/purchases.js';
+import { CallbackSecurityService } from './services/callbackSecurityService.js';
 import { ProviderClient, SteamaProviderClient } from './services/providerClient.js';
 import { PurchaseService } from './services/purchaseService.js';
 import { PendingCreditRetryWorker } from './workers/pendingCreditRetryWorker.js';
@@ -23,6 +24,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     purchaseService: PurchaseService;
     customerMeterRepository: CustomerMeterRepository;
+    callbackSecurityService: CallbackSecurityService;
   }
 }
 
@@ -60,6 +62,10 @@ export const buildApp = (): FastifyInstance => {
     'Backend runtime mode selected'
   );
   const purchaseService = new PurchaseService(providerClient, purchaseRepository, purchaseAuditLogRepository);
+  const callbackSecurityService = new CallbackSecurityService({
+    secret: env.callbackSecret,
+    toleranceSeconds: env.callbackToleranceSeconds
+  });
   const pendingCreditRetryWorker = new PendingCreditRetryWorker({
     enabled: env.retryWorkerEnabled,
     intervalMs: env.retryWorkerIntervalMs,
@@ -77,6 +83,7 @@ export const buildApp = (): FastifyInstance => {
 
   app.decorate('purchaseService', purchaseService);
   app.decorate('customerMeterRepository', customerMeterRepository);
+  app.decorate('callbackSecurityService', callbackSecurityService);
 
   pendingCreditRetryWorker.start();
 

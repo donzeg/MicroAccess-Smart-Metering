@@ -14,11 +14,14 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - `customer` can only initiate purchases for their own `customerId` and read their own purchase/meter data.
 - Payment callback endpoint remains service-facing (`POST /api/v1/payments/callback`).
 
-## Role-based access control
-- Login supports `management` and `customer` roles via `POST /api/v1/auth/login`.
-- `management` can run operations endpoints (credit provider, reconciliation, retry pending, audit logs).
-- `customer` can only initiate purchases for their own `customerId` and read their own purchase/meter data.
-- Payment callback endpoint remains service-facing (`POST /api/v1/payments/callback`).
+## Callback security
+- `POST /api/v1/payments/callback` requires signed headers:
+	- `x-callback-id`
+	- `x-callback-timestamp`
+	- `x-callback-signature`
+- Signature format: HMAC SHA-256 over `timestamp.callbackId.canonicalPayload`.
+- Replay protection blocks reused callback IDs within the tolerance window.
+- Config keys: `CALLBACK_SECRET`, `CALLBACK_TOLERANCE_SECONDS`.
 
 ## Provider integration modes
 - Default mode: local idempotent provider simulation for development and tests.

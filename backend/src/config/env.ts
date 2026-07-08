@@ -31,6 +31,8 @@ export const env = {
   customerUser: process.env.CUSTOMER_USER ?? 'customer',
   customerPassword: process.env.CUSTOMER_PASSWORD ?? 'change-me-customer',
   customerId: process.env.CUSTOMER_ID ?? '1622913',
+  callbackSecret: process.env.CALLBACK_SECRET ?? 'change-me-callback-secret',
+  callbackToleranceSeconds: toNumber(process.env.CALLBACK_TOLERANCE_SECONDS, 300),
   steamaEnabled: toBoolean(process.env.STEAMA_ENABLED, false),
   steamaBaseUrl: process.env.STEAMA_BASE_URL ?? 'https://api.steama.co',
   steamaTokenPath: process.env.STEAMA_TOKEN_PATH ?? '/get-token/',
