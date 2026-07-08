@@ -1,8 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 
 export const registerMappingRoutes = async (app: FastifyInstance): Promise<void> => {
-  app.get('/api/v1/customers/:customerId/meters', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.get(
+    '/api/v1/customers/:customerId/meters',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    async (request, reply) => {
     const customerId = (request.params as { customerId: string }).customerId;
+    const user = request.user;
+
+    if (user?.role === 'customer' && user.customerId !== customerId) {
+      return reply.code(403).send({ message: 'Forbidden' });
+    }
+
     const meters = await app.customerMeterRepository.findByCustomerId(customerId);
 
     if (meters.length === 0) {
@@ -13,5 +22,6 @@ export const registerMappingRoutes = async (app: FastifyInstance): Promise<void>
       customerId,
       meters
     };
-  });
+  }
+  );
 };

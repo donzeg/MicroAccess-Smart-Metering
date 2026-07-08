@@ -27,18 +27,29 @@ const auditLogQuerySchema = z.object({
 });
 
 export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void> => {
-  app.post('/api/v1/purchases/initiate', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.post(
+    '/api/v1/purchases/initiate',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    async (request, reply) => {
     const parsed = initiateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ message: 'Invalid initiate payload', errors: parsed.error.flatten() });
     }
 
+    if (request.user?.role === 'customer' && request.user.customerId !== parsed.data.customerId) {
+      return reply.code(403).send({ message: 'Forbidden' });
+    }
+
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
     const purchase = await app.purchaseService.initiate(parsed.data.customerId, parsed.data.amount, correlationId);
     return reply.code(201).send(purchase);
-  });
+  }
+  );
 
-  app.post('/api/v1/purchases/:purchaseId/payment-confirmed', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.post(
+    '/api/v1/purchases/:purchaseId/payment-confirmed',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
       return reply.code(400).send({ message: 'Invalid purchase id' });
@@ -51,7 +62,8 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
-  });
+  }
+  );
 
   app.post('/api/v1/payments/callback', async (request, reply) => {
     const parsed = paymentCallbackSchema.safeParse(request.body);
@@ -69,7 +81,10 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     }
   });
 
-  app.post('/api/v1/purchases/retry-pending', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.post(
+    '/api/v1/purchases/retry-pending',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async (request, reply) => {
     const parsed = retryPendingSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.code(400).send({ message: 'Invalid retry request payload', errors: parsed.error.flatten() });
@@ -78,9 +93,13 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
     const result = await app.purchaseService.retryPendingCredits(parsed.data.limit, correlationId);
     return reply.send(result);
-  });
+  }
+  );
 
-  app.post('/api/v1/purchases/:purchaseId/credit-provider', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.post(
+    '/api/v1/purchases/:purchaseId/credit-provider',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
       return reply.code(400).send({ message: 'Invalid purchase id' });
@@ -93,9 +112,13 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
-  });
+  }
+  );
 
-  app.post('/api/v1/purchases/:purchaseId/reconcile', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.post(
+    '/api/v1/purchases/:purchaseId/reconcile',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
       return reply.code(400).send({ message: 'Invalid purchase id' });
@@ -108,9 +131,13 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
-  });
+  }
+  );
 
-  app.get('/api/v1/purchases/:purchaseId', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.get(
+    '/api/v1/purchases/:purchaseId',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
       return reply.code(400).send({ message: 'Invalid purchase id' });
@@ -118,13 +145,22 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
     try {
       const purchase = await app.purchaseService.getById(params.data.purchaseId);
+
+      if (request.user?.role === 'customer' && request.user.customerId !== purchase.customerId) {
+        return reply.code(403).send({ message: 'Forbidden' });
+      }
+
       return reply.send(purchase);
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
-  });
+  }
+  );
 
-  app.get('/api/v1/purchases/:purchaseId/audit-logs', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+  app.get(
+    '/api/v1/purchases/:purchaseId/audit-logs',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     const query = auditLogQuerySchema.safeParse(request.query ?? {});
     if (!params.success || !query.success) {
@@ -141,5 +177,6 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
-  });
+  }
+  );
 };

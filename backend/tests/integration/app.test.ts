@@ -5,6 +5,7 @@ import { buildApp } from '../../src/app.js';
 describe('MSM backend integration', () => {
   const app = buildApp();
   let token = '';
+  let customerToken = '';
 
   beforeAll(async () => {
     await app.ready();
@@ -21,6 +22,18 @@ describe('MSM backend integration', () => {
     });
 
     token = loginResponse.json().token as string;
+
+    const customerLoginResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'customer',
+        password: 'change-me-customer',
+        role: 'customer'
+      }
+    });
+
+    customerToken = customerLoginResponse.json().token as string;
   });
 
   afterAll(async () => {
@@ -110,5 +123,45 @@ describe('MSM backend integration', () => {
     const payload = auditLogs.json() as { logs: Array<{ action: string }> };
     expect(payload.logs.length).toBeGreaterThan(0);
     expect(payload.logs.some((entry) => entry.action === 'payment_callback_received')).toBe(true);
+  });
+
+  it('prevents customer from initiating purchase for another customer id', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      payload: { customerId: '1622914', amount: 1200 }
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('allows customer to initiate own purchase and blocks management-only endpoints', async () => {
+    const ownPurchase = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      payload: { customerId: '1622913', amount: 1200 }
+    });
+    expect(ownPurchase.statusCode).toBe(201);
+
+    const retryPending = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/retry-pending',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      payload: { limit: 5 }
+    });
+
+    expect(retryPending.statusCode).toBe(403);
+  });
+
+  it('prevents customer from reading another customer mapping', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/customers/1622914/meters',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(response.statusCode).toBe(403);
   });
 });

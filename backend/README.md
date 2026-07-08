@@ -8,6 +8,18 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Purchase lifecycle endpoints with idempotent provider credit support
 - Unit and integration tests (Vitest)
 
+## Role-based access control
+- Login supports `management` and `customer` roles via `POST /api/v1/auth/login`.
+- `management` can run operations endpoints (credit provider, reconciliation, retry pending, audit logs).
+- `customer` can only initiate purchases for their own `customerId` and read their own purchase/meter data.
+- Payment callback endpoint remains service-facing (`POST /api/v1/payments/callback`).
+
+## Role-based access control
+- Login supports `management` and `customer` roles via `POST /api/v1/auth/login`.
+- `management` can run operations endpoints (credit provider, reconciliation, retry pending, audit logs).
+- `customer` can only initiate purchases for their own `customerId` and read their own purchase/meter data.
+- Payment callback endpoint remains service-facing (`POST /api/v1/payments/callback`).
+
 ## Provider integration modes
 - Default mode: local idempotent provider simulation for development and tests.
 - Live mode: set `STEAMA_ENABLED=true` and provide service credentials in `.env`.
