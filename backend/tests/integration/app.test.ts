@@ -419,3 +419,89 @@ describe('MSM management operations rate limiting integration', () => {
     });
   });
 });
+
+describe('MSM callback rate limiting integration', () => {
+  const app = buildApp();
+
+  beforeAll(async () => {
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 with retry-after and increments callback blocked telemetry', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'change-me'
+      }
+    });
+
+    expect(login.statusCode).toBe(200);
+    const token = login.json().token as string;
+
+    const initiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 3000 }
+    });
+    expect(initiated.statusCode).toBe(201);
+    const purchaseId = initiated.json().id as string;
+
+    let throttledResponse = null as Awaited<ReturnType<typeof app.inject>> | null;
+
+    for (let index = 0; index < 140; index += 1) {
+      const callbackPayload = {
+        purchaseId,
+        status: 'confirmed' as const
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments/callback',
+        headers: buildCallbackHeaders(callbackPayload, `callback-burst-${index}`),
+        payload: callbackPayload
+      });
+
+      if (response.statusCode === 429) {
+        throttledResponse = response;
+        break;
+      }
+    }
+
+    expect(throttledResponse).not.toBeNull();
+    expect(throttledResponse?.statusCode).toBe(429);
+    expect(Number(throttledResponse?.headers['retry-after'] ?? '0')).toBeGreaterThan(0);
+    expect(throttledResponse?.json()).toMatchObject({
+      message: 'Too many requests',
+      policy: 'callback'
+    });
+
+    const metricsResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/rate-limit-metrics',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(metricsResponse.statusCode).toBe(200);
+    const metricsPayload = metricsResponse.json() as {
+      policies: {
+        callback: {
+          allowed: number;
+          blocked: number;
+          lastBlockedAt: string | null;
+        };
+      };
+    };
+    expect(metricsPayload.policies.callback.blocked).toBeGreaterThanOrEqual(1);
+    expect(
+      metricsPayload.policies.callback.lastBlockedAt === null ||
+        typeof metricsPayload.policies.callback.lastBlockedAt === 'string'
+    ).toBe(true);
+  });
+});
