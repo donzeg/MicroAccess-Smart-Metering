@@ -249,3 +249,43 @@ describe('MSM backend integration', () => {
     expect(replay.statusCode).toBe(401);
   });
 });
+
+describe('MSM backend rate limiting integration', () => {
+  const app = buildApp();
+
+  beforeAll(async () => {
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 when auth login limit is exceeded', async () => {
+    let throttledResponse = null as Awaited<ReturnType<typeof app.inject>> | null;
+
+    for (let index = 0; index < 60; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: {
+          username: `wrong-${index}`,
+          password: 'bad-password'
+        }
+      });
+
+      if (response.statusCode === 429) {
+        throttledResponse = response;
+        break;
+      }
+    }
+
+    expect(throttledResponse).not.toBeNull();
+    expect(throttledResponse?.statusCode).toBe(429);
+    expect(throttledResponse?.headers['retry-after']).toBeDefined();
+    expect(throttledResponse?.json()).toMatchObject({
+      message: 'Too many requests',
+      policy: 'auth_login'
+    });
+  });
+});
