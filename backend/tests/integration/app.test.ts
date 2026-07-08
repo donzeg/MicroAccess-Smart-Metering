@@ -109,10 +109,13 @@ describe('MSM backend integration', () => {
     const callback = await app.inject({
       method: 'POST',
       url: '/api/v1/payments/callback',
-      headers: buildCallbackHeaders({
-        purchaseId,
-        status: 'confirmed'
-      }),
+      headers: {
+        ...buildCallbackHeaders({
+          purchaseId,
+          status: 'confirmed'
+        }),
+        'x-correlation-id': 'corr-audit-query-target'
+      },
       payload: {
         purchaseId,
         status: 'confirmed'
@@ -144,6 +147,34 @@ describe('MSM backend integration', () => {
     const payload = auditLogs.json() as { logs: Array<{ action: string }> };
     expect(payload.logs.length).toBeGreaterThan(0);
     expect(payload.logs.some((entry) => entry.action === 'payment_callback_received')).toBe(true);
+
+    const filteredLogs = await app.inject({
+      method: 'GET',
+      url:
+        '/api/v1/purchases/audit-logs?purchaseId=' +
+        purchaseId +
+        '&action=payment_callback_received&correlationId=corr-audit-query-target&limit=10&offset=0',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(filteredLogs.statusCode).toBe(200);
+    const filteredPayload = filteredLogs.json() as {
+      logs: Array<{ purchaseId: string; action: string; correlationId: string }>;
+    };
+    expect(filteredPayload.logs.length).toBeGreaterThan(0);
+    for (const entry of filteredPayload.logs) {
+      expect(entry.purchaseId).toBe(purchaseId);
+      expect(entry.action).toBe('payment_callback_received');
+      expect(entry.correlationId).toBe('corr-audit-query-target');
+    }
+
+    const customerFilteredLogs = await app.inject({
+      method: 'GET',
+      url: '/api/v1/purchases/audit-logs?limit=10',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerFilteredLogs.statusCode).toBe(403);
   });
 
   it('reconciles failed purchases in batch via management endpoint', async () => {

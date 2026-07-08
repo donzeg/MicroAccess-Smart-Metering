@@ -34,6 +34,16 @@ export interface PurchaseAuditLog {
   metadata: Record<string, unknown>;
 }
 
+export interface PurchaseAuditLogQuery {
+  purchaseId?: string;
+  action?: string;
+  correlationId?: string;
+  fromCreatedAt?: string;
+  toCreatedAt?: string;
+  limit: number;
+  offset: number;
+}
+
 export interface PaymentCallbackPayload {
   purchaseId: string;
   status: 'confirmed' | 'failed';

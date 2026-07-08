@@ -76,6 +76,7 @@ Backend implementation is actively in progress and currently includes:
 8. Reconciliation telemetry endpoint for management operations (`GET /api/v1/ops/reconciliation-metrics`)
 9. GitHub CI quality gate on push/PR for backend lint, typecheck, and test enforcement
 10. PostgreSQL parity integration verification in CI using a dedicated postgres-backed test job
+11. Management audit-log query/filter endpoint (`GET /api/v1/purchases/audit-logs`) for cross-purchase operations review
 
 UI work remains intentionally deferred while backend contracts and reliability controls are being completed.
 

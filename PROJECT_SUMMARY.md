@@ -11,13 +11,13 @@
 ### Now (Active Implementation)
 - Backend purchase lifecycle reliability and operations controls
 - Auth and customer-to-meter mapping access controls
-- Callback security, retry/reconciliation flows, and telemetry endpoints
+- Callback security, retry/reconciliation flows, telemetry endpoints, and audit-log filtered querying
 - CI enforcement for lint, typecheck, tests, plus postgres parity integration check
 
 ### Next (Immediate Build Order)
-1. Audit-log query and filtering endpoints for operations review
-2. Management export API contracts (reconciliation and transaction reporting)
-3. Meter-reading ingestion and aggregation implementation slice
+1. Management export API contracts (reconciliation and transaction reporting)
+2. Meter-reading ingestion and aggregation implementation slice
+3. Meter analytics/reporting endpoint hardening for management views
 
 ### Not Active Yet
 - Full web and mobile feature implementation (UI remains deferred)

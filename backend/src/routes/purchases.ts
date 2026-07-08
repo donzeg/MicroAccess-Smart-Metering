@@ -26,6 +26,16 @@ const auditLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100)
 });
 
+const auditLogListQuerySchema = z.object({
+  purchaseId: z.string().uuid().optional(),
+  action: z.string().min(1).max(120).optional(),
+  correlationId: z.string().min(1).max(200).optional(),
+  fromCreatedAt: z.coerce.date().optional(),
+  toCreatedAt: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  offset: z.coerce.number().int().min(0).max(5000).default(0)
+});
+
 export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void> => {
   app.post(
     '/api/v1/purchases/initiate',
@@ -182,6 +192,36 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
+  }
+  );
+
+  app.get(
+    '/api/v1/purchases/audit-logs',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
+    async (request, reply) => {
+    const query = auditLogListQuerySchema.safeParse(request.query ?? {});
+    if (!query.success) {
+      return reply.code(400).send({ message: 'Invalid request parameters', errors: query.error.flatten() });
+    }
+
+    const logs = await app.purchaseService.queryAuditLogs({
+      ...query.data,
+      fromCreatedAt: query.data.fromCreatedAt?.toISOString(),
+      toCreatedAt: query.data.toCreatedAt?.toISOString()
+    });
+
+    return reply.send({
+      filters: {
+        purchaseId: query.data.purchaseId ?? null,
+        action: query.data.action ?? null,
+        correlationId: query.data.correlationId ?? null,
+        fromCreatedAt: query.data.fromCreatedAt?.toISOString() ?? null,
+        toCreatedAt: query.data.toCreatedAt?.toISOString() ?? null,
+        limit: query.data.limit,
+        offset: query.data.offset
+      },
+      logs
+    });
   }
   );
 

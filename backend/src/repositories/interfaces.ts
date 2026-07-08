@@ -1,5 +1,5 @@
 import type { CustomerMeterLink } from '../data/customerMeterMap.js';
-import type { PurchaseAuditLog, PurchaseRecord, PurchaseState } from '../types/purchase.js';
+import type { PurchaseAuditLog, PurchaseAuditLogQuery, PurchaseRecord, PurchaseState } from '../types/purchase.js';
 
 export interface PurchaseRepository {
   create: (record: PurchaseRecord) => Promise<void>;
@@ -15,4 +15,5 @@ export interface CustomerMeterRepository {
 export interface PurchaseAuditLogRepository {
   append: (entry: PurchaseAuditLog) => Promise<void>;
   listByPurchaseId: (purchaseId: string, limit: number) => Promise<PurchaseAuditLog[]>;
+  list: (query: PurchaseAuditLogQuery) => Promise<PurchaseAuditLog[]>;
 }

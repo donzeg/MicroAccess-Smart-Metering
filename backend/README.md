@@ -60,6 +60,7 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - `POST /api/v1/purchases/:purchaseId/reconcile`
 - `POST /api/v1/purchases/reconcile-failed`
 - `GET /api/v1/purchases/:purchaseId`
+- `GET /api/v1/purchases/audit-logs`
 - `GET /api/v1/purchases/:purchaseId/audit-logs`
 
 ## Local run

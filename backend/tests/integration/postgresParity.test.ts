@@ -71,7 +71,10 @@ describeWhenPostgres('MSM postgres parity integration', () => {
     const callbackConfirmed = await app.inject({
       method: 'POST',
       url: '/api/v1/payments/callback',
-      headers: buildCallbackHeaders(confirmedPayload, `${purchaseId}-confirmed`),
+      headers: {
+        ...buildCallbackHeaders(confirmedPayload, `${purchaseId}-confirmed`),
+        'x-correlation-id': 'postgres-parity-callback-correlation'
+      },
       payload: confirmedPayload
     });
 
@@ -135,6 +138,26 @@ describeWhenPostgres('MSM postgres parity integration', () => {
 
     expect(reconcileBatch.statusCode).toBe(200);
     expect(reconcileBatch.json().reconciled).toBeGreaterThanOrEqual(1);
+
+    const filteredAuditLogs = await app.inject({
+      method: 'GET',
+      url:
+        '/api/v1/purchases/audit-logs?purchaseId=' +
+        purchaseId +
+        '&action=payment_callback_received&correlationId=postgres-parity-callback-correlation&limit=10&offset=0',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(filteredAuditLogs.statusCode).toBe(200);
+    expect(filteredAuditLogs.json()).toMatchObject({
+      logs: [
+        {
+          purchaseId,
+          action: 'payment_callback_received',
+          correlationId: 'postgres-parity-callback-correlation'
+        }
+      ]
+    });
 
     const metricsResponse = await app.inject({
       method: 'GET',
