@@ -101,4 +101,30 @@ describe('PurchaseService', () => {
     expect(retryResult.failed).toBe(1);
     expect(retryResult.failureReasons).toEqual({ provider_unavailable: 1 });
   });
+
+  it('reconciles failed purchases in batch mode', async () => {
+    const service = new PurchaseService(
+      new ProviderClient(),
+      new InMemoryPurchaseRepository(),
+      new InMemoryPurchaseAuditLogRepository()
+    );
+
+    const purchase = await service.initiate('1622913', 5000, 'corr-1');
+    await service.processPaymentCallback(
+      {
+        purchaseId: purchase.id,
+        status: 'failed'
+      },
+      'corr-2'
+    );
+
+    const reconcileResult = await service.reconcileFailedPurchases(10, 'corr-3');
+
+    expect(reconcileResult.attempted).toBe(1);
+    expect(reconcileResult.reconciled).toBe(1);
+    expect(reconcileResult.stillFailed).toBe(0);
+
+    const updated = await service.getById(purchase.id);
+    expect(updated.state).toBe('reconciled');
+  });
 });

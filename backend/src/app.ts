@@ -10,7 +10,7 @@ import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepos
 import type { CustomerMeterRepository, PurchaseAuditLogRepository, PurchaseRepository } from './repositories/interfaces.js';
 import { PgCustomerMeterRepository } from './repositories/pgCustomerMeterRepository.js';
 import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogRepository.js';
-import { createPgPool } from './repositories/pgPool.js';
+import { createPgPool, runPgMigrations } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -87,7 +87,15 @@ export const buildApp = (): FastifyInstance => {
   app.decorate('customerMeterRepository', customerMeterRepository);
   app.decorate('callbackSecurityService', callbackSecurityService);
 
-  pendingCreditRetryWorker.start();
+  app.addHook('onReady', async () => {
+    if (pool) {
+      await runPgMigrations(pool, {
+        info: (obj, msg) => app.log.info(obj, msg)
+      });
+    }
+
+    pendingCreditRetryWorker.start();
+  });
 
   if (pool) {
     app.addHook('onClose', async () => {

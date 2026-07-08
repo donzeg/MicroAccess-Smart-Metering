@@ -146,6 +146,56 @@ describe('MSM backend integration', () => {
     expect(payload.logs.some((entry) => entry.action === 'payment_callback_received')).toBe(true);
   });
 
+  it('reconciles failed purchases in batch via management endpoint', async () => {
+    const initiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 2600 }
+    });
+
+    expect(initiated.statusCode).toBe(201);
+    const purchaseId = initiated.json().id as string;
+
+    const callbackPayload = {
+      purchaseId,
+      status: 'failed' as const
+    };
+    const failedCallback = await app.inject({
+      method: 'POST',
+      url: '/api/v1/payments/callback',
+      headers: buildCallbackHeaders(callbackPayload),
+      payload: callbackPayload
+    });
+
+    expect(failedCallback.statusCode).toBe(200);
+    expect(failedCallback.json().state).toBe('failed');
+
+    const reconcileBatch = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/reconcile-failed',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { limit: 20 }
+    });
+
+    expect(reconcileBatch.statusCode).toBe(200);
+    expect(reconcileBatch.json()).toMatchObject({
+      attempted: expect.any(Number),
+      reconciled: expect.any(Number),
+      stillFailed: expect.any(Number)
+    });
+    expect(reconcileBatch.json().reconciled).toBeGreaterThanOrEqual(1);
+
+    const purchase = await app.inject({
+      method: 'GET',
+      url: `/api/v1/purchases/${purchaseId}`,
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(purchase.statusCode).toBe(200);
+    expect(purchase.json().state).toBe('reconciled');
+  });
+
   it('prevents customer from initiating purchase for another customer id', async () => {
     const response = await app.inject({
       method: 'POST',

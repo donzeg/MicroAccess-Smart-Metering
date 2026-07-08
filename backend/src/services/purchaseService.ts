@@ -10,6 +10,12 @@ export interface RetryPendingResult {
   failureReasons: Record<string, number>;
 }
 
+export interface ReconcileFailedResult {
+  attempted: number;
+  reconciled: number;
+  stillFailed: number;
+}
+
 export class PurchaseService {
   constructor(
     private readonly providerClient: CreditProvider,
@@ -188,6 +194,27 @@ export class PurchaseService {
     }
 
     return this.transition(record, 'reconciled', correlationId, 'Manual or scheduled reconciliation completed.');
+  }
+
+  async reconcileFailedPurchases(limit: number, correlationId: string): Promise<ReconcileFailedResult> {
+    const failedPurchases = await this.purchaseRepository.listByState('failed', limit);
+
+    const result: ReconcileFailedResult = {
+      attempted: failedPurchases.length,
+      reconciled: 0,
+      stillFailed: 0
+    };
+
+    for (const purchase of failedPurchases) {
+      const updated = await this.reconcile(purchase.id, correlationId);
+      if (updated.state === 'reconciled') {
+        result.reconciled += 1;
+      } else if (updated.state === 'failed') {
+        result.stillFailed += 1;
+      }
+    }
+
+    return result;
   }
 
   async getById(purchaseId: string): Promise<PurchaseRecord> {

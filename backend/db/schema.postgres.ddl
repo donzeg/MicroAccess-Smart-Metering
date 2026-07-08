@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS purchases (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_purchases_idempotency_key
   ON purchases (idempotency_key);
 
+CREATE INDEX IF NOT EXISTS idx_purchases_state_created_at
+  ON purchases (state, created_at);
+
 CREATE TABLE IF NOT EXISTS purchase_transitions (
   id BIGSERIAL PRIMARY KEY,
   purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,

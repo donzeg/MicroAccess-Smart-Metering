@@ -40,12 +40,14 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Default mode: `STORAGE_MODE=in_memory` for development and tests.
 - Persistent mode: `STORAGE_MODE=postgres` with `DATABASE_URL` configured.
 - PostgreSQL schema file: `backend/db/schema.postgres.ddl`.
+- On startup in postgres mode, backend applies tracked schema migration `0001_schema_postgres_ddl` and verifies checksum drift before serving traffic.
 
 ## Pending credit retry worker
 - A background worker retries purchases in `payment_confirmed_credit_pending`.
 - Retry cadence uses exponential backoff after failed cycles.
 - Failure threshold is tracked with max-consecutive-failure guardrails.
 - Retry results include `failureReasons` aggregation for failed provider credit attempts.
+- Failed purchases can be reconciled in batch through `POST /api/v1/purchases/reconcile-failed`.
 - Key settings: `RETRY_WORKER_ENABLED`, `RETRY_WORKER_INTERVAL_MS`, `RETRY_WORKER_BATCH_LIMIT`, `RETRY_WORKER_MAX_CONSECUTIVE_FAILURES`, `RETRY_WORKER_BACKOFF_MULTIPLIER`, `RETRY_WORKER_MAX_INTERVAL_MS`.
 
 ## Lifecycle endpoints
@@ -55,6 +57,7 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - `POST /api/v1/purchases/:purchaseId/credit-provider`
 - `POST /api/v1/purchases/retry-pending`
 - `POST /api/v1/purchases/:purchaseId/reconcile`
+- `POST /api/v1/purchases/reconcile-failed`
 - `GET /api/v1/purchases/:purchaseId`
 - `GET /api/v1/purchases/:purchaseId/audit-logs`
 

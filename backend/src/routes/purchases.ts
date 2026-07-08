@@ -145,6 +145,21 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
   }
   );
 
+  app.post(
+    '/api/v1/purchases/reconcile-failed',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
+    async (request, reply) => {
+    const parsed = retryPendingSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ message: 'Invalid reconcile request payload', errors: parsed.error.flatten() });
+    }
+
+    const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
+    const result = await app.purchaseService.reconcileFailedPurchases(parsed.data.limit, correlationId);
+    return reply.send(result);
+  }
+  );
+
   app.get(
     '/api/v1/purchases/:purchaseId',
     {
