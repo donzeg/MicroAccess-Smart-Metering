@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { Pool } from 'pg';
 
 import { env } from '../config/env.js';
@@ -10,7 +10,6 @@ interface MigrationLogger {
 }
 
 const SCHEMA_MIGRATION_ID = '0001_schema_postgres_ddl';
-const SCHEMA_SQL_PATH = fileURLToPath(new URL('../../db/schema.postgres.ddl', import.meta.url));
 
 export const createPgPool = (): Pool => {
   return new Pool({
@@ -28,7 +27,12 @@ export const runPgMigrations = async (pool: Pool, logger?: MigrationLogger): Pro
     )
   `);
 
-  const schemaSql = await readFile(SCHEMA_SQL_PATH, 'utf8');
+  let schemaSql: string;
+  try {
+    schemaSql = await readFile(path.resolve(process.cwd(), 'db', 'schema.postgres.ddl'), 'utf8');
+  } catch {
+    schemaSql = await readFile(path.resolve(process.cwd(), 'backend', 'db', 'schema.postgres.ddl'), 'utf8');
+  }
   const checksum = createHash('sha256').update(schemaSql).digest('hex');
 
   const existing = await pool.query<{ id: string; checksum: string }>(
