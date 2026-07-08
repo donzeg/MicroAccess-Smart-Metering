@@ -19,6 +19,12 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Persistent mode: `STORAGE_MODE=postgres` with `DATABASE_URL` configured.
 - PostgreSQL schema file: `backend/db/schema.postgres.ddl`.
 
+## Pending credit retry worker
+- A background worker retries purchases in `payment_confirmed_credit_pending`.
+- Retry cadence uses exponential backoff after failed cycles.
+- Failure threshold is tracked with max-consecutive-failure guardrails.
+- Key settings: `RETRY_WORKER_ENABLED`, `RETRY_WORKER_INTERVAL_MS`, `RETRY_WORKER_BATCH_LIMIT`, `RETRY_WORKER_MAX_CONSECUTIVE_FAILURES`, `RETRY_WORKER_BACKOFF_MULTIPLIER`, `RETRY_WORKER_MAX_INTERVAL_MS`.
+
 ## Lifecycle endpoints
 - `POST /api/v1/purchases/initiate`
 - `POST /api/v1/purchases/:purchaseId/payment-confirmed`

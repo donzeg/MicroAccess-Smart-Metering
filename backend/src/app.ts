@@ -17,6 +17,7 @@ import { registerMappingRoutes } from './routes/mappings.js';
 import { registerPurchaseRoutes } from './routes/purchases.js';
 import { ProviderClient, SteamaProviderClient } from './services/providerClient.js';
 import { PurchaseService } from './services/purchaseService.js';
+import { PendingCreditRetryWorker } from './workers/pendingCreditRetryWorker.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -59,13 +60,34 @@ export const buildApp = (): FastifyInstance => {
     'Backend runtime mode selected'
   );
   const purchaseService = new PurchaseService(providerClient, purchaseRepository, purchaseAuditLogRepository);
+  const pendingCreditRetryWorker = new PendingCreditRetryWorker({
+    enabled: env.retryWorkerEnabled,
+    intervalMs: env.retryWorkerIntervalMs,
+    batchLimit: env.retryWorkerBatchLimit,
+    maxConsecutiveFailures: env.retryWorkerMaxConsecutiveFailures,
+    backoffMultiplier: env.retryWorkerBackoffMultiplier,
+    maxIntervalMs: env.retryWorkerMaxIntervalMs,
+    purchaseService,
+    logger: {
+      info: (obj, msg) => app.log.info(obj, msg),
+      warn: (obj, msg) => app.log.warn(obj, msg),
+      error: (obj, msg) => app.log.error(obj, msg)
+    }
+  });
 
   app.decorate('purchaseService', purchaseService);
   app.decorate('customerMeterRepository', customerMeterRepository);
 
+  pendingCreditRetryWorker.start();
+
   if (pool) {
     app.addHook('onClose', async () => {
+      pendingCreditRetryWorker.stop();
       await pool?.end();
+    });
+  } else {
+    app.addHook('onClose', async () => {
+      pendingCreditRetryWorker.stop();
     });
   }
 

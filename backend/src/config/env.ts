@@ -35,5 +35,11 @@ export const env = {
   steamaPassword: process.env.STEAMA_SERVICE_PASSWORD ?? '',
   steamaTimeoutMs: toNumber(process.env.STEAMA_TIMEOUT_MS, 15000),
   storageMode: process.env.STORAGE_MODE ?? 'in_memory',
-  databaseUrl: process.env.DATABASE_URL ?? ''
+  databaseUrl: process.env.DATABASE_URL ?? '',
+  retryWorkerEnabled: toBoolean(process.env.RETRY_WORKER_ENABLED, true),
+  retryWorkerIntervalMs: toNumber(process.env.RETRY_WORKER_INTERVAL_MS, 30000),
+  retryWorkerBatchLimit: toNumber(process.env.RETRY_WORKER_BATCH_LIMIT, 20),
+  retryWorkerMaxConsecutiveFailures: toNumber(process.env.RETRY_WORKER_MAX_CONSECUTIVE_FAILURES, 5),
+  retryWorkerBackoffMultiplier: toNumber(process.env.RETRY_WORKER_BACKOFF_MULTIPLIER, 2),
+  retryWorkerMaxIntervalMs: toNumber(process.env.RETRY_WORKER_MAX_INTERVAL_MS, 300000)
 };
