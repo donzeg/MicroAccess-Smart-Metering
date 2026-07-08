@@ -11,6 +11,21 @@ const idParamsSchema = z.object({
   purchaseId: z.string().uuid()
 });
 
+const paymentCallbackSchema = z.object({
+  purchaseId: z.string().uuid(),
+  status: z.enum(['confirmed', 'failed']),
+  amount: z.number().positive().optional(),
+  providerReference: z.string().min(1).optional()
+});
+
+const retryPendingSchema = z.object({
+  limit: z.number().int().min(1).max(100).default(20)
+});
+
+const auditLogQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100)
+});
+
 export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void> => {
   app.post('/api/v1/purchases/initiate', { onRequest: [app.verifyJwt] }, async (request, reply) => {
     const parsed = initiateSchema.safeParse(request.body);
@@ -36,6 +51,33 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }
+  });
+
+  app.post('/api/v1/payments/callback', async (request, reply) => {
+    const parsed = paymentCallbackSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: 'Invalid callback payload', errors: parsed.error.flatten() });
+    }
+
+    const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
+
+    try {
+      const purchase = await app.purchaseService.processPaymentCallback(parsed.data, correlationId);
+      return reply.send(purchase);
+    } catch {
+      return reply.code(404).send({ message: 'Purchase not found' });
+    }
+  });
+
+  app.post('/api/v1/purchases/retry-pending', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+    const parsed = retryPendingSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ message: 'Invalid retry request payload', errors: parsed.error.flatten() });
+    }
+
+    const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
+    const result = await app.purchaseService.retryPendingCredits(parsed.data.limit, correlationId);
+    return reply.send(result);
   });
 
   app.post('/api/v1/purchases/:purchaseId/credit-provider', { onRequest: [app.verifyJwt] }, async (request, reply) => {
@@ -77,6 +119,25 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     try {
       const purchase = await app.purchaseService.getById(params.data.purchaseId);
       return reply.send(purchase);
+    } catch {
+      return reply.code(404).send({ message: 'Purchase not found' });
+    }
+  });
+
+  app.get('/api/v1/purchases/:purchaseId/audit-logs', { onRequest: [app.verifyJwt] }, async (request, reply) => {
+    const params = idParamsSchema.safeParse(request.params);
+    const query = auditLogQuerySchema.safeParse(request.query ?? {});
+    if (!params.success || !query.success) {
+      return reply.code(400).send({ message: 'Invalid request parameters' });
+    }
+
+    try {
+      await app.purchaseService.getById(params.data.purchaseId);
+      const logs = await app.purchaseService.getAuditLogs(params.data.purchaseId, query.data.limit);
+      return reply.send({
+        purchaseId: params.data.purchaseId,
+        logs
+      });
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
     }

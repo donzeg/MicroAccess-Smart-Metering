@@ -22,9 +22,12 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 ## Lifecycle endpoints
 - `POST /api/v1/purchases/initiate`
 - `POST /api/v1/purchases/:purchaseId/payment-confirmed`
+- `POST /api/v1/payments/callback`
 - `POST /api/v1/purchases/:purchaseId/credit-provider`
+- `POST /api/v1/purchases/retry-pending`
 - `POST /api/v1/purchases/:purchaseId/reconcile`
 - `GET /api/v1/purchases/:purchaseId`
+- `GET /api/v1/purchases/:purchaseId/audit-logs`
 
 ## Local run
 1. Copy `.env.example` to `.env`

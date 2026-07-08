@@ -25,4 +25,14 @@ export class InMemoryPurchaseRepository implements PurchaseRepository {
 
     return cloneRecord(record);
   }
+
+  async listByState(state: PurchaseRecord['state'], limit: number): Promise<PurchaseRecord[]> {
+    const values = Array.from(this.store.values())
+      .filter((record) => record.state === state)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(0, limit)
+      .map((record) => cloneRecord(record));
+
+    return values;
+  }
 }

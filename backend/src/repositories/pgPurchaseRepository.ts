@@ -75,6 +75,29 @@ export class PgPurchaseRepository implements PurchaseRepository {
     };
   }
 
+  async listByState(state: PurchaseRecord['state'], limit: number): Promise<PurchaseRecord[]> {
+    const result = await this.pool.query<{ id: string }>(
+      `
+      SELECT id
+      FROM purchases
+      WHERE state = $1
+      ORDER BY created_at ASC
+      LIMIT $2
+      `,
+      [state, limit]
+    );
+
+    const records: PurchaseRecord[] = [];
+    for (const row of result.rows) {
+      const record = await this.getById(row.id);
+      if (record) {
+        records.push(record);
+      }
+    }
+
+    return records;
+  }
+
   private async persistRecord(record: PurchaseRecord): Promise<void> {
     const client = await this.pool.connect();
     try {

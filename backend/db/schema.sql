@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS purchase_transitions (
 CREATE INDEX IF NOT EXISTS idx_purchase_transitions_purchase_id
   ON purchase_transitions (purchase_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS purchase_audit_logs (
+  id UUID PRIMARY KEY,
+  purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  message TEXT NOT NULL,
+  correlation_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_audit_logs_purchase_id
+  ON purchase_audit_logs (purchase_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS customer_meter_map (
   customer_id TEXT NOT NULL,
   meter_id TEXT NOT NULL,

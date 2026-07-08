@@ -23,3 +23,20 @@ export interface PurchaseRecord {
   updatedAt: string;
   transitions: PurchaseTransition[];
 }
+
+export interface PurchaseAuditLog {
+  id: string;
+  purchaseId: string;
+  action: string;
+  message: string;
+  correlationId: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PaymentCallbackPayload {
+  purchaseId: string;
+  status: 'confirmed' | 'failed';
+  amount?: number;
+  providerReference?: string;
+}

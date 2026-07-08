@@ -3,10 +3,12 @@ import type { Pool } from 'pg';
 
 import { env } from './config/env.js';
 import { authPlugin } from './plugins/auth.js';
+import { InMemoryPurchaseAuditLogRepository } from './repositories/inMemoryPurchaseAuditLogRepository.js';
 import { InMemoryCustomerMeterRepository } from './repositories/inMemoryCustomerMeterRepository.js';
 import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepository.js';
-import type { CustomerMeterRepository, PurchaseRepository } from './repositories/interfaces.js';
+import type { CustomerMeterRepository, PurchaseAuditLogRepository, PurchaseRepository } from './repositories/interfaces.js';
 import { PgCustomerMeterRepository } from './repositories/pgCustomerMeterRepository.js';
+import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogRepository.js';
 import { createPgPool } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -34,6 +36,9 @@ export const buildApp = (): FastifyInstance => {
   }
 
   const purchaseRepository: PurchaseRepository = pool ? new PgPurchaseRepository(pool) : new InMemoryPurchaseRepository();
+  const purchaseAuditLogRepository: PurchaseAuditLogRepository = pool
+    ? new PgPurchaseAuditLogRepository(pool)
+    : new InMemoryPurchaseAuditLogRepository();
   const customerMeterRepository: CustomerMeterRepository = pool
     ? new PgCustomerMeterRepository(pool)
     : new InMemoryCustomerMeterRepository();
@@ -53,7 +58,7 @@ export const buildApp = (): FastifyInstance => {
     { steamaEnabled: useSteamaProvider, storageMode: usePostgres ? 'postgres' : 'in_memory' },
     'Backend runtime mode selected'
   );
-  const purchaseService = new PurchaseService(providerClient, purchaseRepository);
+  const purchaseService = new PurchaseService(providerClient, purchaseRepository, purchaseAuditLogRepository);
 
   app.decorate('purchaseService', purchaseService);
   app.decorate('customerMeterRepository', customerMeterRepository);
