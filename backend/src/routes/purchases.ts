@@ -19,7 +19,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     }
 
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
-    const purchase = app.purchaseService.initiate(parsed.data.customerId, parsed.data.amount, correlationId);
+    const purchase = await app.purchaseService.initiate(parsed.data.customerId, parsed.data.amount, correlationId);
     return reply.code(201).send(purchase);
   });
 
@@ -31,7 +31,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
     try {
-      const purchase = app.purchaseService.markPaymentConfirmed(params.data.purchaseId, correlationId);
+      const purchase = await app.purchaseService.markPaymentConfirmed(params.data.purchaseId, correlationId);
       return reply.send(purchase);
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
@@ -61,7 +61,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
     const correlationId = request.headers['x-correlation-id']?.toString() ?? randomUUID();
     try {
-      const purchase = app.purchaseService.reconcile(params.data.purchaseId, correlationId);
+      const purchase = await app.purchaseService.reconcile(params.data.purchaseId, correlationId);
       return reply.send(purchase);
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });
@@ -75,7 +75,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
     }
 
     try {
-      const purchase = app.purchaseService.getById(params.data.purchaseId);
+      const purchase = await app.purchaseService.getById(params.data.purchaseId);
       return reply.send(purchase);
     } catch {
       return reply.code(404).send({ message: 'Purchase not found' });

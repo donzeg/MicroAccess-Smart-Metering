@@ -14,6 +14,11 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - In live mode, backend posts customer top-up to `POST /customers/{id}/transactions/` through Steama token auth from `/get-token/`.
 - Web/mobile clients never call Steama directly.
 
+## Storage modes
+- Default mode: `STORAGE_MODE=in_memory` for development and tests.
+- Persistent mode: `STORAGE_MODE=postgres` with `DATABASE_URL` configured.
+- PostgreSQL schema file: `backend/db/schema.sql`.
+
 ## Lifecycle endpoints
 - `POST /api/v1/purchases/initiate`
 - `POST /api/v1/purchases/:purchaseId/payment-confirmed`

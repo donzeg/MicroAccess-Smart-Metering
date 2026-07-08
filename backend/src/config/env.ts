@@ -33,5 +33,7 @@ export const env = {
   steamaTokenPath: process.env.STEAMA_TOKEN_PATH ?? '/get-token/',
   steamaUsername: process.env.STEAMA_SERVICE_USERNAME ?? '',
   steamaPassword: process.env.STEAMA_SERVICE_PASSWORD ?? '',
-  steamaTimeoutMs: toNumber(process.env.STEAMA_TIMEOUT_MS, 15000)
+  steamaTimeoutMs: toNumber(process.env.STEAMA_TIMEOUT_MS, 15000),
+  storageMode: process.env.STORAGE_MODE ?? 'in_memory',
+  databaseUrl: process.env.DATABASE_URL ?? ''
 };

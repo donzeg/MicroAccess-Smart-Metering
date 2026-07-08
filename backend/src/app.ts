@@ -1,7 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
 
 import { env } from './config/env.js';
 import { authPlugin } from './plugins/auth.js';
+import { InMemoryCustomerMeterRepository } from './repositories/inMemoryCustomerMeterRepository.js';
+import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepository.js';
+import type { CustomerMeterRepository, PurchaseRepository } from './repositories/interfaces.js';
+import { PgCustomerMeterRepository } from './repositories/pgCustomerMeterRepository.js';
+import { createPgPool } from './repositories/pgPool.js';
+import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMappingRoutes } from './routes/mappings.js';
@@ -12,11 +19,24 @@ import { PurchaseService } from './services/purchaseService.js';
 declare module 'fastify' {
   interface FastifyInstance {
     purchaseService: PurchaseService;
+    customerMeterRepository: CustomerMeterRepository;
   }
 }
 
 export const buildApp = (): FastifyInstance => {
   const app = Fastify({ logger: true });
+
+  let pool: Pool | null = null;
+  const usePostgres = env.storageMode === 'postgres' && env.databaseUrl.length > 0;
+
+  if (usePostgres) {
+    pool = createPgPool();
+  }
+
+  const purchaseRepository: PurchaseRepository = pool ? new PgPurchaseRepository(pool) : new InMemoryPurchaseRepository();
+  const customerMeterRepository: CustomerMeterRepository = pool
+    ? new PgCustomerMeterRepository(pool)
+    : new InMemoryCustomerMeterRepository();
 
   const useSteamaProvider = env.steamaEnabled && env.steamaUsername.length > 0 && env.steamaPassword.length > 0;
   const providerClient = useSteamaProvider
@@ -29,10 +49,20 @@ export const buildApp = (): FastifyInstance => {
       })
     : new ProviderClient();
 
-  app.log.info({ steamaEnabled: useSteamaProvider }, 'Provider mode selected');
-  const purchaseService = new PurchaseService(providerClient);
+  app.log.info(
+    { steamaEnabled: useSteamaProvider, storageMode: usePostgres ? 'postgres' : 'in_memory' },
+    'Backend runtime mode selected'
+  );
+  const purchaseService = new PurchaseService(providerClient, purchaseRepository);
 
   app.decorate('purchaseService', purchaseService);
+  app.decorate('customerMeterRepository', customerMeterRepository);
+
+  if (pool) {
+    app.addHook('onClose', async () => {
+      await pool?.end();
+    });
+  }
 
   app.register(authPlugin);
   app.register(registerHealthRoutes);

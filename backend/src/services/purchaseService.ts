@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { CreditProvider } from './providerClient.js';
+import type { PurchaseRepository } from '../repositories/interfaces.js';
 import type { PurchaseRecord, PurchaseState } from '../types/purchase.js';
 
 export class PurchaseService {
-  private readonly purchases = new Map<string, PurchaseRecord>();
+  constructor(
+    private readonly providerClient: CreditProvider,
+    private readonly purchaseRepository: PurchaseRepository
+  ) {}
 
-  constructor(private readonly providerClient: CreditProvider) {}
-
-  initiate(customerId: string, amount: number, correlationId: string): PurchaseRecord {
+  async initiate(customerId: string, amount: number, correlationId: string): Promise<PurchaseRecord> {
     const now = new Date().toISOString();
     const record: PurchaseRecord = {
       id: randomUUID(),
@@ -28,12 +30,12 @@ export class PurchaseService {
       ]
     };
 
-    this.purchases.set(record.id, record);
+    await this.purchaseRepository.create(record);
     return record;
   }
 
-  markPaymentConfirmed(purchaseId: string, correlationId: string): PurchaseRecord {
-    const record = this.mustGet(purchaseId);
+  async markPaymentConfirmed(purchaseId: string, correlationId: string): Promise<PurchaseRecord> {
+    const record = await this.mustGet(purchaseId);
     if (record.state !== 'initiated') {
       return record;
     }
@@ -42,7 +44,7 @@ export class PurchaseService {
   }
 
   async creditViaProvider(purchaseId: string, correlationId: string): Promise<PurchaseRecord> {
-    const record = this.mustGet(purchaseId);
+    const record = await this.mustGet(purchaseId);
     if (record.state === 'credited' || record.state === 'reconciled') {
       return record;
     }
@@ -66,8 +68,8 @@ export class PurchaseService {
     return this.transition(record, 'failed', correlationId, `Provider credit failed: ${result.reason ?? 'unknown_reason'}`);
   }
 
-  reconcile(purchaseId: string, correlationId: string): PurchaseRecord {
-    const record = this.mustGet(purchaseId);
+  async reconcile(purchaseId: string, correlationId: string): Promise<PurchaseRecord> {
+    const record = await this.mustGet(purchaseId);
     if (record.state !== 'failed') {
       return record;
     }
@@ -75,19 +77,19 @@ export class PurchaseService {
     return this.transition(record, 'reconciled', correlationId, 'Manual or scheduled reconciliation completed.');
   }
 
-  getById(purchaseId: string): PurchaseRecord {
+  async getById(purchaseId: string): Promise<PurchaseRecord> {
     return this.mustGet(purchaseId);
   }
 
-  private mustGet(purchaseId: string): PurchaseRecord {
-    const record = this.purchases.get(purchaseId);
+  private async mustGet(purchaseId: string): Promise<PurchaseRecord> {
+    const record = await this.purchaseRepository.getById(purchaseId);
     if (!record) {
       throw new Error('purchase_not_found');
     }
     return record;
   }
 
-  private transition(record: PurchaseRecord, state: PurchaseState, correlationId: string, note: string): PurchaseRecord {
+  private async transition(record: PurchaseRecord, state: PurchaseState, correlationId: string, note: string): Promise<PurchaseRecord> {
     const now = new Date().toISOString();
     record.state = state;
     record.updatedAt = now;
@@ -97,6 +99,8 @@ export class PurchaseService {
       correlationId,
       note
     });
+
+    await this.purchaseRepository.update(record);
     return record;
   }
 }
