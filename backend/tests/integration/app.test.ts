@@ -289,3 +289,104 @@ describe('MSM backend rate limiting integration', () => {
     });
   });
 });
+
+describe('MSM purchase initiation rate limiting integration', () => {
+  const app = buildApp();
+
+  beforeAll(async () => {
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 when purchase initiation limit is exceeded', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'change-me'
+      }
+    });
+
+    expect(login.statusCode).toBe(200);
+    const token = login.json().token as string;
+
+    let throttledResponse = null as Awaited<ReturnType<typeof app.inject>> | null;
+
+    for (let index = 0; index < 70; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/purchases/initiate',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: {
+          customerId: '1622913',
+          amount: 500 + index
+        }
+      });
+
+      if (response.statusCode === 429) {
+        throttledResponse = response;
+        break;
+      }
+    }
+
+    expect(throttledResponse).not.toBeNull();
+    expect(throttledResponse?.statusCode).toBe(429);
+    expect(throttledResponse?.json()).toMatchObject({
+      message: 'Too many requests',
+      policy: 'purchases_initiate'
+    });
+  });
+});
+
+describe('MSM management operations rate limiting integration', () => {
+  const app = buildApp();
+
+  beforeAll(async () => {
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 when management operation limit is exceeded', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'change-me'
+      }
+    });
+
+    expect(login.statusCode).toBe(200);
+    const token = login.json().token as string;
+
+    let throttledResponse = null as Awaited<ReturnType<typeof app.inject>> | null;
+
+    for (let index = 0; index < 140; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/purchases/retry-pending',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { limit: 1 }
+      });
+
+      if (response.statusCode === 429) {
+        throttledResponse = response;
+        break;
+      }
+    }
+
+    expect(throttledResponse).not.toBeNull();
+    expect(throttledResponse?.statusCode).toBe(429);
+    expect(throttledResponse?.json()).toMatchObject({
+      message: 'Too many requests',
+      policy: 'management_ops'
+    });
+  });
+});
