@@ -2,11 +2,21 @@
 
 **Date:** July 7, 2026  
 **Project:** Custom Metering Management Platform & Mobile Application  
-**Status:** Design & Architecture Phase Complete 
+**Status:** Backend Implementation in Progress (API foundation, lifecycle, security, throttling, and observability active)
 
 ---
 
 ##  Deliverables Summary
+
+### 0. **Current Backend Build Progress (Live)**
+- Fastify + TypeScript backend running with strict validation and JWT role model
+- Purchase lifecycle states implemented and enforced end-to-end
+- Callback security hardening complete (HMAC signature + replay protection)
+- Inbound/outbound rate limiting in place (including provider 10 rps guard)
+- Retry worker includes failure-reason aggregation for operations observability
+- Unit/integration tests and quality gates are active in each delivery checkpoint
+
+---
 
 ### 1. **STEAMA_API_CATEGORIZATION.md** 
 **Complete API analysis and categorization**
@@ -158,8 +168,8 @@
 ### **Key Integration Points:**
 
 1. **Authentication:**
-   - Our app  Steama `/get-token/`  Store token securely
-   - All requests include: `Authorization: Token {steama_token}`
+  - MSM backend  Steama `/get-token/` using service credentials stored server-side only
+  - All provider requests include: `Authorization: Token {steama_token}` from backend services
 
 2. **Customer Balance (Mobile Home Screen):**
    ```
@@ -170,9 +180,8 @@
 
 3. **Buy Units (Mobile Purchase Flow):**
    ```
-   POST /customer-transactions/
+  POST /customers/{customer_id}/transactions/
    {
-     "customer": 123,
      "amount": "5000.00",
      "payment_method": "mobile_money",
      "description": "Unit purchase via mobile app"
@@ -248,6 +257,197 @@
 ---
 
 ##  Next Steps
+
+##  Build Scope Detail (Web + Mobile)
+
+### Web Application (Management)
+
+1. Dashboard and Monitoring
+- Source contribution panel (solar, grid, generator when enabled)
+- Meter availability panel (online/offline/active)
+- Alert center with severity, ownership, and acknowledgement
+- Data synchronization status and stale-data warnings
+
+2. Customer and Meter Administration
+- Customer directory with search/filter
+- Meter directory with assignment and status
+- Customer detail view: balances, transactions, meter links
+- Controlled manual adjustment workflow with audit notes
+
+3. Billing and Reconciliation Workspace
+- Month-end reconciliation page
+- Collections vs source contribution comparison
+- Grid payable estimate from measured grid usage
+- Solar contribution value/offset display
+- Export outputs for finance operations
+
+4. Reporting
+- Consumption reports by meter/customer/department
+- Spend reports by customer/department
+- Revenue and transaction trends
+
+### Mobile Application (Customer)
+
+1. Home
+- Balance card
+- Meter state card
+- Recent usage snapshot
+- Quick actions (Buy Units, Usage, Transactions, Support)
+
+2. Buy Units
+- Amount selection and payment method
+- Payment processing and confirmation
+- Provider credit posting via MSM backend to customer transaction endpoint
+- Success/failure handling with idempotent confirmation
+
+3. Usage and Transactions
+- Usage charts by day/week/month
+- Transaction history with status and reference
+- Purchase receipts and balance updates
+
+4. Notifications
+- Payment confirmation
+- Low-balance alerts
+- Service notices
+
+### Shared Technical Rules
+
+1. Security and Integration
+- Mobile/web clients never call Steama directly
+- MSM backend is the only holder of Steama credentials and tokens
+- All provider actions are logged with correlation IDs
+
+2. Billing Policy (Current Phase)
+- Generator is excluded from customer billing calculations
+- Billing attribution uses solar + grid until generator bulk meter is installed
+
+3. Reconciliation Data Integrity
+- Use meter reading deltas, not only raw cumulative snapshots
+- Retain anomaly flags in reports and audit exports
+
+##  MVP Sprint Backlog (Week 1-6)
+
+### Week 1 - Foundation and Contracts
+
+Objective:
+- Establish working mono-repo structure, environment templates, and API contracts for customer and management flows.
+
+Backlog:
+1. Finalize endpoint contract matrix for MVP features
+- Include request/response schemas for:
+  - `POST /customers/{id}/transactions/`
+  - `GET /customers/{id}/transactions/`
+  - `GET /customers/{id}/`
+  - `GET /meters/`, `GET /meter-metric-readings/`, `GET /meter-metric-totals/`
+  - `GET /alerts/`, `GET /revenue/`
+2. Define role model and permissions
+- Customer role vs management role
+- Resource-level authorization rules
+3. Set up repository structure and env strategy
+- backend, web, mobile, shared contracts
+- `.env.example` with placeholders only
+4. Define reconciliation formulas and reporting windows
+- solar + grid attribution only
+- generator excluded by policy in phase 1
+
+Definition of done:
+- Signed-off API contract table
+- Signed-off role/permission matrix
+- Signed-off reconciliation formula sheet
+
+### Week 2 - Backend Core Integration
+
+Objective:
+- Deliver secure Steama integration service and transaction orchestration foundation.
+
+Backlog:
+1. Implement Steama auth client
+- token retrieval, renewal policy, retry/backoff, rate-limit handling
+2. Implement core integration adapters
+- customers, meters, readings, alerts, revenue, transactions
+3. Implement idempotent purchase orchestration endpoint
+- internal endpoint: `/api/transactions/purchase`
+- upstream call: `POST /customers/{id}/transactions/`
+4. Add audit and observability baseline
+- correlation IDs, structured logs, error taxonomy
+
+Definition of done:
+- End-to-end test proving purchase orchestration posts to provider in sandbox/test account
+- Retry and idempotency tests passing
+
+### Week 3 - Customer Mobile MVP (Flow Complete)
+
+Objective:
+- Ship the minimum complete customer self-service flow.
+
+Backlog:
+1. Authentication and session management (MSM backend auth)
+2. Home screen
+- balance, meter state, recent usage snapshot
+3. Buy units screen
+- amount selection, payment method, confirmation UX
+4. Purchase completion flow
+- payment callback handling
+- purchase status polling/finalization
+5. Transaction history screen
+- list, detail, receipt state
+
+Definition of done:
+- Customer can complete purchase without agent intervention
+- Successful purchase updates visible balance/transaction history
+
+### Week 4 - Management Web MVP (Operations)
+
+Objective:
+- Deliver management console for operational visibility and transaction oversight.
+
+Backlog:
+1. Operations dashboard
+- online/offline counts, alerts, revenue snapshot
+2. Customer and meter views
+- searchable lists and detail pages
+3. Transaction monitor
+- status board for purchase events and failures
+4. Alert handling
+- acknowledge and assign workflow
+
+Definition of done:
+- Management can monitor system health and transaction flow without raw provider console access
+
+### Week 5 - Reconciliation and Reports MVP
+
+Objective:
+- Produce month-ready finance and contribution outputs.
+
+Backlog:
+1. Source contribution module
+- solar vs grid contribution in selected windows
+2. Billing and reconciliation workspace
+- collections vs grid payable vs solar offset
+3. Export features
+- CSV/PDF for monthly operations
+4. Data quality layer
+- anomaly flags, missing interval markers, confidence indicators
+
+Definition of done:
+- Finance can run a complete reconciliation cycle for one month using MSM outputs only
+
+### Week 6 - Stabilization and Go-Live Readiness
+
+Objective:
+- Harden MVP for controlled pilot launch.
+
+Backlog:
+1. Security hardening
+- server-side secret checks, auth guard reviews, access control tests
+2. Reliability hardening
+- queue retries, dead-letter handling, timeout and fallback policies
+3. UAT with management and sample customers
+4. Pilot runbook
+- incident process, rollback plan, reconciliation run procedure
+
+Definition of done:
+- Pilot-ready sign-off for customer self-service purchase + management reconciliation
 
 ### **Phase 1: Development Setup (Week 1-2)**
 1. Set up development environment

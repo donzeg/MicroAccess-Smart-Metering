@@ -44,7 +44,7 @@ The current MVP should use only these endpoint groups as primary scope:
    - `/customers/`
    - `/account-balances/`
 4. Purchase and spend tracking:
-   - `/customer-transactions/`
+   - `/customers/{id}/transactions/`
    - `/transactions/`
    - `/revenue/`
 5. Operational alerts:
@@ -66,7 +66,7 @@ Out of scope for MVP unless explicitly required:
 |-------------|-----------|---------------|
 | **`/customers/`** | List, Read, Update, Create |  View all customers<br> Create new customer accounts<br> Update customer information<br> Search/filter customers |
 | **`/account-balances/`** | List (Read-only) |  View customer balance history<br> Track balance trends<br> Display current balance in mobile app |
-| **`/customer-transactions/`** | List, Create |  **CRITICAL FOR MOBILE APP**: Record payment transactions<br> View transaction history<br> Process unit purchases |
+| **`/customers/{id}/transactions/`** | List, Create |  **CRITICAL FOR MOBILE APP**: Record payment transactions<br> View transaction history<br> Process unit purchases |
 | **`/customer-audit-logs/`** | List (Read-only) |  Track customer account changes<br> Audit trail for compliance |
 
 **Mobile App Priority:**  (Essential)  
@@ -117,7 +117,7 @@ Out of scope for MVP unless explicitly required:
 
 | API Endpoint | Operations | Key Use Cases |
 |-------------|-----------|---------------|
-| **`/customer-transactions/`** | List, Create |  **MOBILE APP CORE**: Record unit purchases<br> Payment processing<br> Top-up accounts<br> Transaction history |
+| **`/customers/{id}/transactions/`** | List, Create |  **MOBILE APP CORE**: Record unit purchases<br> Payment processing<br> Top-up accounts<br> Transaction history |
 | **`/transactions/`** | List (Read-only) |  General transaction ledger<br> All system transactions |
 | **`/agent-transactions/`** | List, Create |  Vendor/agent payment records<br> Commission tracking |
 | **`/invalid-payments/`** | List, Read |  Failed payment tracking<br> Payment reconciliation |
@@ -243,14 +243,14 @@ Out of scope for MVP unless explicitly required:
 
 #### 1. **User Authentication**
 - **API:** `/get-token/` (POST)
-- **Flow:** Username/password  Get auth token  Store securely
+- **Flow:** Backend service authenticates with Steama using service credentials; mobile/web clients never store Steama credentials or tokens
 
 #### 2. **Dashboard / Home Screen**
 ```
 Components:
  Current Balance  GET /customers/{id}/ (account_balance field)
  Meter Status (ON/OFF)  GET /meters/{id}/ (connection_is_on fields)
- Recent Transactions  GET /customer-transactions/?customer={id}
+ Recent Transactions  GET /customers/{id}/transactions/
  Usage Today/This Month  GET /meters/{id}/metrics/{metric}/readings/
 ```
 
@@ -258,9 +258,8 @@ Components:
 ```
 Workflow:
 1. User enters amount to purchase
-2. POST /customer-transactions/ with payment details
+2. POST /customers/{id}/transactions/ with payment details
    {
-     "customer": customer_id,
      "amount": "50.00",
      "payment_method": "mobile_money",
      "description": "Unit purchase via mobile app"
@@ -283,8 +282,16 @@ API: GET /meters/{meter_id}/metrics/{metric}/readings/
 
 #### 5. **Transaction History**
 ```
-API: GET /customer-transactions/?customer={id}&ordering=-timestamp
+API: GET /customers/{id}/transactions/?ordering=-timestamp
 Display: Date, Amount, Balance After, Description
+```
+
+Updated API note:
+```
+Primary transaction-history path for this tenant is:
+GET /customers/{id}/transactions/?ordering=-timestamp
+
+Top-level /transactions/ remains useful for management-ledger and reconciliation queries.
 ```
 
 #### 6. **Notifications**
@@ -318,7 +325,7 @@ APIs:
 #### 2. **Customer Management**
 - Customer list with search/filter (`/customers/`)
 - Customer details and history
-- Manual transaction entry (`/customer-transactions/`)
+- Manual transaction entry (`/customers/{id}/transactions/`)
 - Account balance trends (`/account-balances/`)
 
 #### 3. **Meter Management**
@@ -354,25 +361,26 @@ POST https://api.steama.co/get-token/
 Content-Type: application/json
 
 {
-  "username": "sadiq.yusuf",
-  "password": "Fade1515."
+   "username": "<STEAMA_SERVICE_USERNAME>",
+   "password": "<STEAMA_SERVICE_PASSWORD>"
 }
 
 Response:
 {
-  "token": "410fe69257f33392df94c4ba014682b2"
+   "token": "<STEAMA_TOKEN>"
 }
 ```
 
 ### **Using the Token:**
 ```http
 GET https://api.steama.co/customers/
-Authorization: Token 410fe69257f33392df94c4ba014682b2
+Authorization: Token <STEAMA_TOKEN>
 ```
 
 ### **Security Recommendations:**
--  Store tokens securely (encrypted storage in mobile app)
--  Implement token refresh mechanism
+-  Keep Steama credentials and Steama tokens server-side only
+-  Mobile/web clients authenticate to MSM backend, not directly to Steama
+-  Implement token rotation/refresh strategy in backend integration service
 -  Use HTTPS for all API calls
 -  Never expose credentials in code
 -  Implement rate limiting (current: 10 requests/second)
@@ -409,8 +417,8 @@ Authorization: Token 410fe69257f33392df94c4ba014682b2
        No  Show Login Screen
 
 2. User Logs In
-    POST /get-token/
-       Store token securely
+   Login to MSM backend
+      MSM backend handles Steama token lifecycle securely
 
 3. Dashboard Loads
     GET /customers/{id}/  Display name, balance
@@ -421,7 +429,7 @@ Authorization: Token 410fe69257f33392df94c4ba014682b2
     Select amount (predefined or custom)
     Choose payment method
     Confirm purchase
-    POST /customer-transactions/
+   POST /customers/{id}/transactions/
        Success  Show confirmation
           Refresh balance
        Error  Show error message

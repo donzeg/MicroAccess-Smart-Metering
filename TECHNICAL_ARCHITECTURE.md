@@ -191,7 +191,7 @@ sequenceDiagram
     Backend->>Payment: Process Payment
     Payment-->>Backend: Payment Confirmed
     
-    Backend->>Steama: POST /customer-transactions/
+    Backend->>Steama: POST /customers/{id}/transactions/
     Note over Backend,Steama: Create transaction record
     Steama-->>Backend: Transaction Created
     
@@ -596,9 +596,13 @@ class SteamaAPIClient {
 | Meter kWh Readings | `/api/meters/:id/readings` | `/meter-metric-readings/` | 5min |
 | Meter Aggregates | `/api/meters/:id/totals` | `/meter-metric-totals/` | 10min |
 | Customer Profile + Balance | `/api/customers/:id` | `/customers/` | 30s |
-| Purchase Units | `/api/transactions/purchase` | `/customer-transactions/` | N/A |
-| Department Spend Report | `/api/reports/monthly-spend` | `/customer-transactions/`, `/revenue/` | 15min |
+| Purchase Units | `/api/transactions/purchase` | `/customers/{id}/transactions/` | N/A |
+| Department Spend Report | `/api/reports/monthly-spend` | `/customers/{id}/transactions/`, `/transactions/`, `/revenue/` | 15min |
 | Alerts Feed | `/api/alerts` | `/alerts/` | 30s |
+
+Current business-rule note:
+- Generator contribution is excluded from customer billing in phase 1.
+- Reconciliation currently uses solar and grid bulk metering only; generator attribution is enabled after generator bulk meter installation.
 
 ### 8.3 Data Synchronization Strategy
 
@@ -637,6 +641,18 @@ CREATE TABLE users (
   last_login TIMESTAMP
 );
 
+-- MSM user to provider identity mapping
+CREATE TABLE user_provider_customer_map (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id),
+  provider_customer_id INTEGER NOT NULL, -- Steama customer ID
+  site_id INTEGER,
+  is_active BOOLEAN DEFAULT TRUE,
+  last_synced TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (user_id, provider_customer_id)
+);
+
 -- Customers (synced from Steama)
 CREATE TABLE customers (
   id INTEGER PRIMARY KEY, -- Steama customer ID
@@ -655,6 +671,17 @@ CREATE TABLE meters (
   last_synced TIMESTAMP DEFAULT NOW(),
   INDEX idx_meter_customer (customer_id),
   INDEX idx_meter_sync (last_synced)
+);
+
+-- Optional explicit mapping for users with multiple assigned meters
+CREATE TABLE user_meter_map (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id),
+  meter_id INTEGER NOT NULL REFERENCES meters(id),
+  is_primary BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  last_synced TIMESTAMP DEFAULT NOW(),
+  UNIQUE (user_id, meter_id)
 );
 
 -- Meter readings (time-series data)
@@ -701,6 +728,32 @@ CREATE TABLE alerts (
 
 -- Optional notifications queue (enable only if SMS/Push is activated)
 ```
+
+Identity mapping operational notes:
+- MSM authentication remains independent from provider authentication.
+- Provider customer and meter assignments are synchronized into mapping tables.
+- All customer-scoped provider calls resolve provider IDs through mapping tables after MSM token validation.
+
+Failure handling rules:
+- If no active mapping exists for a logged-in user, return a controlled business error and block purchase operations.
+- If multiple meters are assigned, use `is_primary` when present; otherwise require explicit meter selection.
+- For payment-confirmed but credit-post-failed cases, persist an intermediate status and retry with idempotency key.
+- Reconciliation worker must backfill local transaction gaps from provider transaction history.
+- Rate-limit and provider-outage scenarios must trigger bounded retries, queueing, and observability alerts.
+
+Purchase lifecycle states (canonical):
+- `initiated`
+- `payment_confirmed_credit_pending`
+- `credited`
+- `failed`
+- `reconciled`
+
+State transition policy:
+- `initiated` -> `payment_confirmed_credit_pending` on payment confirmation.
+- `payment_confirmed_credit_pending` -> `credited` on successful provider write.
+- `payment_confirmed_credit_pending` -> `failed` after bounded retries exhausted.
+- `failed` -> `reconciled` after successful backfill or manual resolution.
+- Only backend services may transition states; all transitions require correlation IDs and audit logs.
 
 ### 9.2 Time-Series Optimization (TimescaleDB)
 

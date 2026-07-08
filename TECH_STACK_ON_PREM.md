@@ -525,8 +525,8 @@ REDIS_PASSWORD=your_redis_password_here
 JWT_SECRET=your_jwt_secret_here
 
 # Steama API
-STEAMA_USERNAME=sadiq.yusuf
-STEAMA_PASSWORD=Fade1515.
+STEAMA_USERNAME=your_steama_service_username
+STEAMA_PASSWORD=your_steama_service_password
 
 # Grafana
 GRAFANA_PASSWORD=admin_password_here
