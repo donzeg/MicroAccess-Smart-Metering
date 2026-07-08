@@ -624,6 +624,66 @@ On-demand Sync:
   - Error recovery
 ```
 
+### 8.4 Backend Operations Endpoint Contracts (Implemented)
+
+The backend exposes management operations for recovery and observability. These routes are implemented and validated in integration tests.
+
+1. `POST /api/v1/purchases/retry-pending`
+- Purpose: retry purchases in `payment_confirmed_credit_pending` state
+- Request body: `{ "limit": number }`
+- Response shape:
+
+```json
+{
+  "attempted": 3,
+  "credited": 2,
+  "failed": 1,
+  "failureReasons": {
+    "provider_timeout": 1
+  }
+}
+```
+
+2. `POST /api/v1/purchases/reconcile-failed`
+- Purpose: reconcile purchases currently in `failed` state
+- Request body: `{ "limit": number }`
+- Response shape:
+
+```json
+{
+  "attempted": 2,
+  "reconciled": 1,
+  "failed": 1
+}
+```
+
+3. `GET /api/v1/ops/reconciliation-metrics`
+- Purpose: management telemetry for retry and failed-reconcile outcomes
+- Response shape:
+
+```json
+{
+  "pendingRetry": {
+    "attempted": 5,
+    "credited": 4,
+    "failed": 1,
+    "failureReasons": {
+      "provider_timeout": 1
+    }
+  },
+  "failedReconciliation": {
+    "attempted": 3,
+    "reconciled": 2,
+    "failed": 1
+  }
+}
+```
+
+Enforcement rules:
+- user-visible success is only valid when state transitions to `credited`.
+- provider top-up calls are idempotent and safe for retries.
+- all transitions are audit-logged with request correlation IDs.
+
 ---
 
 ## 9. Database Schema

@@ -17,6 +17,7 @@
 - Unit/integration tests and quality gates are active in each delivery checkpoint
 - GitHub CI now enforces backend lint, typecheck, and test checks on push/PR
 - CI includes dedicated postgres-backed parity integration test coverage
+- Root documentation now includes concrete request/response contracts for retry, reconcile-failed, and reconciliation telemetry endpoints
 
 ---
 

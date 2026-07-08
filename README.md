@@ -79,6 +79,95 @@ Backend implementation is actively in progress and currently includes:
 
 UI work remains intentionally deferred while backend contracts and reliability controls are being completed.
 
+## Backend Operations API Contracts (Current)
+
+The following management-only endpoints are part of the active backend implementation and are used for operations visibility and recovery.
+
+1. Retry pending credits
+
+Request:
+
+```http
+POST /api/v1/purchases/retry-pending
+Authorization: Bearer <management_jwt>
+Content-Type: application/json
+
+{
+	"limit": 20
+}
+```
+
+Response (200):
+
+```json
+{
+	"attempted": 3,
+	"credited": 2,
+	"failed": 1,
+	"failureReasons": {
+		"provider_timeout": 1
+	}
+}
+```
+
+2. Reconcile failed purchases in batch
+
+Request:
+
+```http
+POST /api/v1/purchases/reconcile-failed
+Authorization: Bearer <management_jwt>
+Content-Type: application/json
+
+{
+	"limit": 20
+}
+```
+
+Response (200):
+
+```json
+{
+	"attempted": 2,
+	"reconciled": 1,
+	"failed": 1
+}
+```
+
+3. Reconciliation telemetry snapshot
+
+Request:
+
+```http
+GET /api/v1/ops/reconciliation-metrics
+Authorization: Bearer <management_jwt>
+```
+
+Response (200):
+
+```json
+{
+	"pendingRetry": {
+		"attempted": 5,
+		"credited": 4,
+		"failed": 1,
+		"failureReasons": {
+			"provider_timeout": 1
+		}
+	},
+	"failedReconciliation": {
+		"attempted": 3,
+		"reconciled": 2,
+		"failed": 1
+	}
+}
+```
+
+Contract rules:
+- user-facing purchase success must only be shown when purchase state is `credited`.
+- all provider credit operations must remain idempotent.
+- every lifecycle transition must be audit-logged with correlation ID.
+
 ## API-First Scope
 The MVP implementation is limited to API-backed capabilities:
 
