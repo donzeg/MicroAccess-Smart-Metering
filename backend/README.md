@@ -26,6 +26,8 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 ## Request throttling
 - Inbound API endpoints have fixed-window rate limits by policy (auth, purchase initiation, callback, management ops, reads).
 - Outbound provider calls are throttled to `PROVIDER_RATE_LIMIT_RPS` (default 10 rps) to respect provider constraints.
+- Blocked requests are logged with structured fields including policy, identity, and retryAfterSeconds.
+- Management can inspect current rate-limit counters via `GET /api/v1/ops/rate-limit-metrics`.
 - Config keys: `AUTH_LOGIN_LIMIT_PER_MINUTE`, `PURCHASE_INITIATE_LIMIT_PER_MINUTE`, `CALLBACK_LIMIT_PER_MINUTE`, `MANAGEMENT_OPS_LIMIT_PER_MINUTE`, `READS_LIMIT_PER_MINUTE`, `PROVIDER_RATE_LIMIT_RPS`.
 
 ## Provider integration modes

@@ -248,6 +248,35 @@ describe('MSM backend integration', () => {
 
     expect(replay.statusCode).toBe(401);
   });
+
+  it('exposes rate-limit metrics to management only', async () => {
+    const managementResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/rate-limit-metrics',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(managementResponse.statusCode).toBe(200);
+    const metricsPayload = managementResponse.json() as {
+      policies: Record<string, { allowed: number; blocked: number; lastBlockedAt: string | null }>;
+    };
+    const expectedPolicies = ['auth_login', 'purchases_initiate', 'callback', 'management_ops', 'reads'];
+
+    for (const policy of expectedPolicies) {
+      const metrics = metricsPayload.policies[policy];
+      expect(typeof metrics?.allowed).toBe('number');
+      expect(typeof metrics?.blocked).toBe('number');
+      expect(metrics.lastBlockedAt === null || typeof metrics.lastBlockedAt === 'string').toBe(true);
+    }
+
+    const customerResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/rate-limit-metrics',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerResponse.statusCode).toBe(403);
+  });
 });
 
 describe('MSM backend rate limiting integration', () => {
