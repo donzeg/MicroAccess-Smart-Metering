@@ -58,7 +58,7 @@ export class MeterReadingService {
   list(query: MeterReadingListQuery): MeterReadingRecord[] {
     const meterReadings = this.store.get(query.meterId) ?? [];
 
-    return meterReadings
+    return [...meterReadings]
       .filter((entry) => {
         if (query.fromRecordedAt && entry.recordedAt < query.fromRecordedAt) {
           return false;
@@ -70,7 +70,7 @@ export class MeterReadingService {
 
         return true;
       })
-      .toSorted((left, right) => right.recordedAt.localeCompare(left.recordedAt))
+      .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
       .slice(query.offset, query.offset + query.limit)
       .map((entry) => cloneRecord(entry));
   }
@@ -110,7 +110,7 @@ export class MeterReadingService {
           avgKwh: round(sumKwh / entries.length)
         };
       })
-      .toSorted((left, right) => right.bucketStart.localeCompare(left.bucketStart))
+        .sort((left, right) => right.bucketStart.localeCompare(left.bucketStart))
       .slice(query.offset, query.offset + query.limit);
   }
 

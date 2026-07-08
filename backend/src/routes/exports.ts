@@ -71,16 +71,16 @@ const toCsvValue = (value: string | number | null): string => {
   return normalized;
 };
 
-const toCsv = <T extends Record<string, string | number | null>>(rows: T[]): string => {
+const toCsv = <T extends object>(rows: T[]): string => {
   if (rows.length === 0) {
     return '';
   }
 
-  const headers = Object.keys(rows[0]);
+  const headers = Object.keys(rows[0]) as Array<keyof T>;
   const lines = [headers.join(',')];
 
   for (const row of rows) {
-    lines.push(headers.map((header) => toCsvValue(row[header] ?? null)).join(','));
+    lines.push(headers.map((header) => toCsvValue((row[header] as string | number | null | undefined) ?? null)).join(','));
   }
 
   return lines.join('\n');

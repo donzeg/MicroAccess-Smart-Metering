@@ -43,8 +43,8 @@ export class InMemoryPurchaseAuditLogRepository implements PurchaseAuditLogRepos
       return true;
     });
 
-    return filtered
-      .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+    return [...filtered]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(query.offset, query.offset + query.limit)
       .map((entry) => cloneEntry(entry));
   }
