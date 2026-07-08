@@ -48,6 +48,7 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Failure threshold is tracked with max-consecutive-failure guardrails.
 - Retry results include `failureReasons` aggregation for failed provider credit attempts.
 - Failed purchases can be reconciled in batch through `POST /api/v1/purchases/reconcile-failed`.
+- Management reconciliation telemetry is available through `GET /api/v1/ops/reconciliation-metrics` with cumulative counters for retry and failed-reconcile outcomes.
 - Key settings: `RETRY_WORKER_ENABLED`, `RETRY_WORKER_INTERVAL_MS`, `RETRY_WORKER_BATCH_LIMIT`, `RETRY_WORKER_MAX_CONSECUTIVE_FAILURES`, `RETRY_WORKER_BACKOFF_MULTIPLIER`, `RETRY_WORKER_MAX_INTERVAL_MS`.
 
 ## Lifecycle endpoints

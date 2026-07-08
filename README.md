@@ -73,6 +73,7 @@ Backend implementation is actively in progress and currently includes:
 5. Callback security (HMAC signature verification, timestamp tolerance, replay protection)
 6. Pending-credit retry worker with backoff and failure-reason aggregation
 7. Inbound and outbound rate limiting with management telemetry endpoint (`GET /api/v1/ops/rate-limit-metrics`)
+8. Reconciliation telemetry endpoint for management operations (`GET /api/v1/ops/reconciliation-metrics`)
 
 UI work remains intentionally deferred while backend contracts and reliability controls are being completed.
 

@@ -194,6 +194,40 @@ describe('MSM backend integration', () => {
 
     expect(purchase.statusCode).toBe(200);
     expect(purchase.json().state).toBe('reconciled');
+
+    const metricsResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/reconciliation-metrics',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.json()).toMatchObject({
+      generatedAt: expect.any(String),
+      pendingRetry: {
+        cycles: expect.any(Number),
+        attempted: expect.any(Number),
+        credited: expect.any(Number),
+        failed: expect.any(Number),
+        failureReasons: expect.any(Object)
+      },
+      failedReconciliation: {
+        cycles: expect.any(Number),
+        attempted: expect.any(Number),
+        reconciled: expect.any(Number),
+        stillFailed: expect.any(Number),
+        stillFailedReasons: expect.any(Object)
+      }
+    });
+    expect(metricsResponse.json().failedReconciliation.reconciled).toBeGreaterThanOrEqual(1);
+
+    const customerMetricsResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/reconciliation-metrics',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerMetricsResponse.statusCode).toBe(403);
   });
 
   it('prevents customer from initiating purchase for another customer id', async () => {

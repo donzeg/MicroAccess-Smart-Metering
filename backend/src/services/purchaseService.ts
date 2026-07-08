@@ -16,7 +16,61 @@ export interface ReconcileFailedResult {
   stillFailed: number;
 }
 
+export interface ReconciliationTelemetrySnapshot {
+  generatedAt: string;
+  pendingRetry: {
+    cycles: number;
+    attempted: number;
+    credited: number;
+    failed: number;
+    failureReasons: Record<string, number>;
+  };
+  failedReconciliation: {
+    cycles: number;
+    attempted: number;
+    reconciled: number;
+    stillFailed: number;
+    stillFailedReasons: Record<string, number>;
+  };
+}
+
+interface ReconciliationTelemetryState {
+  updatedAt: string;
+  pendingRetry: {
+    cycles: number;
+    attempted: number;
+    credited: number;
+    failed: number;
+    failureReasons: Record<string, number>;
+  };
+  failedReconciliation: {
+    cycles: number;
+    attempted: number;
+    reconciled: number;
+    stillFailed: number;
+    stillFailedReasons: Record<string, number>;
+  };
+}
+
 export class PurchaseService {
+  private readonly reconciliationTelemetry: ReconciliationTelemetryState = {
+    updatedAt: new Date().toISOString(),
+    pendingRetry: {
+      cycles: 0,
+      attempted: 0,
+      credited: 0,
+      failed: 0,
+      failureReasons: {}
+    },
+    failedReconciliation: {
+      cycles: 0,
+      attempted: 0,
+      reconciled: 0,
+      stillFailed: 0,
+      stillFailedReasons: {}
+    }
+  };
+
   constructor(
     private readonly providerClient: CreditProvider,
     private readonly purchaseRepository: PurchaseRepository,
@@ -164,6 +218,16 @@ export class PurchaseService {
       }
     }
 
+    this.reconciliationTelemetry.pendingRetry.cycles += 1;
+    this.reconciliationTelemetry.pendingRetry.attempted += result.attempted;
+    this.reconciliationTelemetry.pendingRetry.credited += result.credited;
+    this.reconciliationTelemetry.pendingRetry.failed += result.failed;
+    for (const [reason, count] of Object.entries(result.failureReasons)) {
+      this.reconciliationTelemetry.pendingRetry.failureReasons[reason] =
+        (this.reconciliationTelemetry.pendingRetry.failureReasons[reason] ?? 0) + count;
+    }
+    this.reconciliationTelemetry.updatedAt = new Date().toISOString();
+
     return result;
   }
 
@@ -211,10 +275,43 @@ export class PurchaseService {
         result.reconciled += 1;
       } else if (updated.state === 'failed') {
         result.stillFailed += 1;
+        this.reconciliationTelemetry.failedReconciliation.stillFailedReasons['failed_state_persisted'] =
+          (this.reconciliationTelemetry.failedReconciliation.stillFailedReasons['failed_state_persisted'] ?? 0) + 1;
+      } else {
+        result.stillFailed += 1;
+        this.reconciliationTelemetry.failedReconciliation.stillFailedReasons[`unexpected_state_${updated.state}`] =
+          (this.reconciliationTelemetry.failedReconciliation.stillFailedReasons[`unexpected_state_${updated.state}`] ?? 0) +
+          1;
       }
     }
 
+    this.reconciliationTelemetry.failedReconciliation.cycles += 1;
+    this.reconciliationTelemetry.failedReconciliation.attempted += result.attempted;
+    this.reconciliationTelemetry.failedReconciliation.reconciled += result.reconciled;
+    this.reconciliationTelemetry.failedReconciliation.stillFailed += result.stillFailed;
+    this.reconciliationTelemetry.updatedAt = new Date().toISOString();
+
     return result;
+  }
+
+  getReconciliationTelemetrySnapshot(): ReconciliationTelemetrySnapshot {
+    return {
+      generatedAt: this.reconciliationTelemetry.updatedAt,
+      pendingRetry: {
+        cycles: this.reconciliationTelemetry.pendingRetry.cycles,
+        attempted: this.reconciliationTelemetry.pendingRetry.attempted,
+        credited: this.reconciliationTelemetry.pendingRetry.credited,
+        failed: this.reconciliationTelemetry.pendingRetry.failed,
+        failureReasons: { ...this.reconciliationTelemetry.pendingRetry.failureReasons }
+      },
+      failedReconciliation: {
+        cycles: this.reconciliationTelemetry.failedReconciliation.cycles,
+        attempted: this.reconciliationTelemetry.failedReconciliation.attempted,
+        reconciled: this.reconciliationTelemetry.failedReconciliation.reconciled,
+        stillFailed: this.reconciliationTelemetry.failedReconciliation.stillFailed,
+        stillFailedReasons: { ...this.reconciliationTelemetry.failedReconciliation.stillFailedReasons }
+      }
+    };
   }
 
   async getById(purchaseId: string): Promise<PurchaseRecord> {

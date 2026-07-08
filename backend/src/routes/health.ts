@@ -13,4 +13,12 @@ export const registerHealthRoutes = async (app: FastifyInstance): Promise<void> 
       };
     }
   );
+
+  app.get(
+    '/api/v1/ops/reconciliation-metrics',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    async () => {
+      return app.purchaseService.getReconciliationTelemetrySnapshot();
+    }
+  );
 };
