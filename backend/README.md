@@ -78,3 +78,8 @@ Meter reading endpoints:
 3. Run dev server: `npm run dev`
 4. Run checks: `npm run lint && npm run typecheck && npm test`
 5. Run postgres parity integration test (when postgres is available): `TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/msm_test npm test -- --run tests/integration/postgresParity.test.ts`
+
+## CI TypeScript compatibility guardrails
+- Keep backend code compatible with the current TypeScript target/library used in CI.
+- Do not use ES2023-only helpers such as `Array.prototype.toSorted`; use copy + `sort` instead.
+- For generic serializers (for example CSV builders), avoid requiring index signatures on typed row interfaces.

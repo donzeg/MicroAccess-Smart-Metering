@@ -47,6 +47,7 @@ Rules:
 
 ## Engineering Standards
 - TypeScript strict mode for backend/web.
+- Keep code compatible with current CI TypeScript target/library (avoid ES2023-only APIs unless tsconfig is explicitly upgraded).
 - Validate request/response schemas (Zod).
 - Use structured logging with request IDs.
 - UI rule: do not use gradient colors; use solid brand colors and clear contrast.
