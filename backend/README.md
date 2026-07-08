@@ -67,3 +67,4 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 2. Install dependencies: `npm install`
 3. Run dev server: `npm run dev`
 4. Run checks: `npm run lint && npm run typecheck && npm test`
+5. Run postgres parity integration test (when postgres is available): `TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/msm_test npm test -- --run tests/integration/postgresParity.test.ts`

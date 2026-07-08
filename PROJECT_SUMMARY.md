@@ -16,6 +16,7 @@
 - Retry worker includes failure-reason aggregation for operations observability
 - Unit/integration tests and quality gates are active in each delivery checkpoint
 - GitHub CI now enforces backend lint, typecheck, and test checks on push/PR
+- CI includes dedicated postgres-backed parity integration test coverage
 
 ---
 
