@@ -38,3 +38,30 @@ export interface MeterReadingAggregateRow {
   maxKwh: number;
   avgKwh: number;
 }
+
+export interface MeterReadingAnalyticsQuery {
+  meterIds?: string[];
+  fromRecordedAt?: string;
+  toRecordedAt?: string;
+}
+
+export interface MeterReadingAnalyticsMeterRow {
+  meterId: string;
+  readingCount: number;
+  totalKwh: number;
+  avgKwh: number;
+  minKwh: number | null;
+  maxKwh: number | null;
+  lastRecordedAt: string | null;
+}
+
+export interface MeterReadingAnalyticsSummary {
+  generatedAt: string;
+  meterCount: number;
+  totalReadings: number;
+  totalKwh: number;
+  avgReadingKwh: number | null;
+  minReadingKwh: number | null;
+  maxReadingKwh: number | null;
+  meters: MeterReadingAnalyticsMeterRow[];
+}

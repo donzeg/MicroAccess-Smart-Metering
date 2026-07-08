@@ -554,6 +554,68 @@ describe('MSM backend integration', () => {
 
     expect(customerIngestAttempt.statusCode).toBe(403);
   });
+
+  it('exposes management meter analytics summary and top-consumer views', async () => {
+    const ingestMeterOne = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-001/readings',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        readingKwh: 20.1,
+        source: 'manual',
+        recordedAt: '2026-07-08T13:00:00.000Z'
+      }
+    });
+    expect(ingestMeterOne.statusCode).toBe(201);
+
+    const ingestMeterTwo = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-002/readings',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        readingKwh: 6.4,
+        source: 'manual',
+        recordedAt: '2026-07-08T13:10:00.000Z'
+      }
+    });
+    expect(ingestMeterTwo.statusCode).toBe(201);
+
+    const summaryResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/meters/analytics/summary?customerId=1622913',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(summaryResponse.json()).toMatchObject({
+      summary: {
+        meterCount: expect.any(Number),
+        totalReadings: expect.any(Number),
+        totalKwh: expect.any(Number),
+        meters: expect.any(Array)
+      }
+    });
+    expect(summaryResponse.json().summary.meterCount).toBeGreaterThanOrEqual(1);
+
+    const topConsumersResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/meters/analytics/top-consumers?customerId=1622913&limit=2',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(topConsumersResponse.statusCode).toBe(200);
+    const topConsumerRows = topConsumersResponse.json().rows as Array<{ meterId: string; totalKwh: number }>;
+    expect(topConsumerRows.length).toBeGreaterThanOrEqual(1);
+    expect(topConsumerRows[0].totalKwh).toBeGreaterThanOrEqual(topConsumerRows[topConsumerRows.length - 1].totalKwh);
+
+    const customerSummaryAttempt = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/meters/analytics/summary',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerSummaryAttempt.statusCode).toBe(403);
+  });
 });
 
 describe('MSM backend rate limiting integration', () => {

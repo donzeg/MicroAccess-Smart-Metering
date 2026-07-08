@@ -238,5 +238,32 @@ describeWhenPostgres('MSM postgres parity integration', () => {
       bucket: 'day',
       rows: expect.any(Array)
     });
+
+    const analyticsSummary = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/meters/analytics/summary?customerId=1622913',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(analyticsSummary.statusCode).toBe(200);
+    expect(analyticsSummary.json()).toMatchObject({
+      summary: {
+        meterCount: expect.any(Number),
+        totalReadings: expect.any(Number),
+        totalKwh: expect.any(Number),
+        meters: expect.any(Array)
+      }
+    });
+
+    const topConsumers = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/meters/analytics/top-consumers?customerId=1622913&limit=2',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(topConsumers.statusCode).toBe(200);
+    expect(topConsumers.json()).toMatchObject({
+      rows: expect.any(Array)
+    });
   });
 });

@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type {
   MeterReadingAggregateQuery,
   MeterReadingAggregateRow,
+  MeterReadingAnalyticsMeterRow,
+  MeterReadingAnalyticsQuery,
+  MeterReadingAnalyticsSummary,
   MeterReadingRecord,
   MeterReadingSource,
   MeterReadingListQuery
@@ -112,6 +115,70 @@ export class MeterReadingService {
       })
         .sort((left, right) => right.bucketStart.localeCompare(left.bucketStart))
       .slice(query.offset, query.offset + query.limit);
+  }
+
+  listMeterIds(): string[] {
+    return Array.from(this.store.keys()).sort((left, right) => left.localeCompare(right));
+  }
+
+  getAnalyticsSummary(query: MeterReadingAnalyticsQuery): MeterReadingAnalyticsSummary {
+    const meterRows = this.buildMeterAnalyticsRows(query);
+    const totalReadings = meterRows.reduce((sum, row) => sum + row.readingCount, 0);
+    const totalKwh = meterRows.reduce((sum, row) => sum + row.totalKwh, 0);
+    const nonNullMins = meterRows.map((row) => row.minKwh).filter((value): value is number => value !== null);
+    const nonNullMaxes = meterRows.map((row) => row.maxKwh).filter((value): value is number => value !== null);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      meterCount: meterRows.length,
+      totalReadings,
+      totalKwh: round(totalKwh),
+      avgReadingKwh: totalReadings > 0 ? round(totalKwh / totalReadings) : null,
+      minReadingKwh: nonNullMins.length > 0 ? round(Math.min(...nonNullMins)) : null,
+      maxReadingKwh: nonNullMaxes.length > 0 ? round(Math.max(...nonNullMaxes)) : null,
+      meters: meterRows
+    };
+  }
+
+  getTopConsumers(query: MeterReadingAnalyticsQuery, limit: number): MeterReadingAnalyticsMeterRow[] {
+    return this.buildMeterAnalyticsRows(query)
+      .sort((left, right) => {
+        if (right.totalKwh !== left.totalKwh) {
+          return right.totalKwh - left.totalKwh;
+        }
+
+        return left.meterId.localeCompare(right.meterId);
+      })
+      .slice(0, limit);
+  }
+
+  private buildMeterAnalyticsRows(query: MeterReadingAnalyticsQuery): MeterReadingAnalyticsMeterRow[] {
+    const meterIds = query.meterIds && query.meterIds.length > 0 ? query.meterIds : this.listMeterIds();
+
+    return meterIds
+      .map((meterId) => {
+        const rows = this.list({
+          meterId,
+          fromRecordedAt: query.fromRecordedAt,
+          toRecordedAt: query.toRecordedAt,
+          limit: 10000,
+          offset: 0
+        });
+
+        const totalKwh = rows.reduce((sum, row) => sum + row.readingKwh, 0);
+        const lastRecordedAt = rows.length > 0 ? rows[0].recordedAt : null;
+
+        return {
+          meterId,
+          readingCount: rows.length,
+          totalKwh: round(totalKwh),
+          avgKwh: rows.length > 0 ? round(totalKwh / rows.length) : 0,
+          minKwh: rows.length > 0 ? round(Math.min(...rows.map((row) => row.readingKwh))) : null,
+          maxKwh: rows.length > 0 ? round(Math.max(...rows.map((row) => row.readingKwh))) : null,
+          lastRecordedAt
+        };
+      })
+      .sort((left, right) => left.meterId.localeCompare(right.meterId));
   }
 
   private seed(): void {

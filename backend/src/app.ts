@@ -15,6 +15,7 @@ import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerMeterAnalyticsRoutes } from './routes/meterAnalytics.js';
 import { registerMappingRoutes } from './routes/mappings.js';
 import { registerMeterReadingRoutes } from './routes/meterReadings.js';
 import { registerPurchaseRoutes } from './routes/purchases.js';
@@ -120,6 +121,7 @@ export const buildApp = (): FastifyInstance => {
   app.register(registerAuthRoutes);
   app.register(registerMappingRoutes);
   app.register(registerMeterReadingRoutes);
+  app.register(registerMeterAnalyticsRoutes);
   app.register(registerPurchaseRoutes);
   app.register(registerExportRoutes);
 

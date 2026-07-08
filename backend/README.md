@@ -72,6 +72,10 @@ Meter reading endpoints:
 - `GET /api/v1/meters/:meterId/readings`
 - `GET /api/v1/meters/:meterId/readings/aggregates` (bucketed `hour|day` summary)
 
+Management meter analytics endpoints:
+- `GET /api/v1/ops/meters/analytics/summary`
+- `GET /api/v1/ops/meters/analytics/top-consumers`
+
 ## Local run
 1. Copy `.env.example` to `.env`
 2. Install dependencies: `npm install`
