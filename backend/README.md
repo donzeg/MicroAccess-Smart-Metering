@@ -45,6 +45,7 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - A background worker retries purchases in `payment_confirmed_credit_pending`.
 - Retry cadence uses exponential backoff after failed cycles.
 - Failure threshold is tracked with max-consecutive-failure guardrails.
+- Retry results include `failureReasons` aggregation for failed provider credit attempts.
 - Key settings: `RETRY_WORKER_ENABLED`, `RETRY_WORKER_INTERVAL_MS`, `RETRY_WORKER_BATCH_LIMIT`, `RETRY_WORKER_MAX_CONSECUTIVE_FAILURES`, `RETRY_WORKER_BACKOFF_MULTIPLIER`, `RETRY_WORKER_MAX_INTERVAL_MS`.
 
 ## Lifecycle endpoints

@@ -10,7 +10,7 @@ describe('PendingCreditRetryWorker', () => {
   it('runs retry cycles on schedule when enabled', async () => {
     vi.useFakeTimers();
 
-    const retryPendingCredits = vi.fn().mockResolvedValue({ attempted: 1, credited: 1, failed: 0 });
+    const retryPendingCredits = vi.fn().mockResolvedValue({ attempted: 1, credited: 1, failed: 0, failureReasons: {} });
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
@@ -42,7 +42,7 @@ describe('PendingCreditRetryWorker', () => {
     const retryPendingCredits = vi
       .fn()
       .mockRejectedValueOnce(new Error('first_failure'))
-      .mockResolvedValueOnce({ attempted: 0, credited: 0, failed: 0 });
+      .mockResolvedValueOnce({ attempted: 0, credited: 0, failed: 0, failureReasons: {} });
 
     const logger = {
       info: vi.fn(),

@@ -7,6 +7,7 @@ export interface RetryPendingResult {
   attempted: number;
   credited: number;
   failed: number;
+  failureReasons: Record<string, number>;
 }
 
 export class PurchaseService {
@@ -142,7 +143,8 @@ export class PurchaseService {
     const result: RetryPendingResult = {
       attempted: pendingPurchases.length,
       credited: 0,
-      failed: 0
+      failed: 0,
+      failureReasons: {}
     };
 
     for (const purchase of pendingPurchases) {
@@ -151,10 +153,23 @@ export class PurchaseService {
         result.credited += 1;
       } else if (updated.state === 'failed') {
         result.failed += 1;
+        const reason = this.extractFailureReason(updated);
+        result.failureReasons[reason] = (result.failureReasons[reason] ?? 0) + 1;
       }
     }
 
     return result;
+  }
+
+  private extractFailureReason(record: PurchaseRecord): string {
+    const transition = record.transitions[record.transitions.length - 1];
+    const note = transition?.note ?? '';
+    const prefix = 'Provider credit failed: ';
+    if (note.startsWith(prefix) && note.length > prefix.length) {
+      return note.slice(prefix.length).trim();
+    }
+
+    return 'unknown_reason';
   }
 
   async reconcile(purchaseId: string, correlationId: string): Promise<PurchaseRecord> {

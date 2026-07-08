@@ -103,6 +103,7 @@ export class PendingCreditRetryWorker {
           attempted: result.attempted,
           credited: result.credited,
           failed: result.failed,
+          failureReasons: result.failureReasons,
           nextRunInMs: this.currentDelayMs
         },
         'Pending credit retry cycle completed.'

@@ -5,6 +5,20 @@ import { InMemoryPurchaseRepository } from '../../src/repositories/inMemoryPurch
 import { ProviderClient } from '../../src/services/providerClient.js';
 import { PurchaseService } from '../../src/services/purchaseService.js';
 
+class AlwaysFailProvider {
+  async postCustomerCredit(): Promise<{
+    status: 'failed';
+    providerReference: string;
+    reason: string;
+  }> {
+    return {
+      status: 'failed',
+      providerReference: 'provider-failed-ref',
+      reason: 'provider_unavailable'
+    };
+  }
+}
+
 describe('PurchaseService', () => {
   it('moves purchase to credited when provider credit succeeds', async () => {
     const service = new PurchaseService(
@@ -64,8 +78,27 @@ describe('PurchaseService', () => {
     const retryResult = await service.retryPendingCredits(10, 'corr-3');
     expect(retryResult.attempted).toBe(1);
     expect(retryResult.credited).toBe(1);
+    expect(retryResult.failureReasons).toEqual({});
 
     const finalRecord = await service.getById(purchase.id);
     expect(finalRecord.state).toBe('credited');
+  });
+
+  it('aggregates failure reasons when retrying pending credits', async () => {
+    const service = new PurchaseService(
+      new AlwaysFailProvider(),
+      new InMemoryPurchaseRepository(),
+      new InMemoryPurchaseAuditLogRepository()
+    );
+
+    const purchase = await service.initiate('1622913', 5000, 'corr-1');
+    await service.markPaymentConfirmed(purchase.id, 'corr-2');
+
+    const retryResult = await service.retryPendingCredits(10, 'corr-3');
+
+    expect(retryResult.attempted).toBe(1);
+    expect(retryResult.credited).toBe(0);
+    expect(retryResult.failed).toBe(1);
+    expect(retryResult.failureReasons).toEqual({ provider_unavailable: 1 });
   });
 });
