@@ -1,0 +1,2 @@
+-- PostgreSQL schema moved to schema.postgres.ddl
+-- Keep this stub to avoid stale SQL Server diagnostics on old path.

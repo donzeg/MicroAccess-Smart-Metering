@@ -17,7 +17,7 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 ## Storage modes
 - Default mode: `STORAGE_MODE=in_memory` for development and tests.
 - Persistent mode: `STORAGE_MODE=postgres` with `DATABASE_URL` configured.
-- PostgreSQL schema file: `backend/db/schema.sql`.
+- PostgreSQL schema file: `backend/db/schema.postgres.ddl`.
 
 ## Lifecycle endpoints
 - `POST /api/v1/purchases/initiate`
