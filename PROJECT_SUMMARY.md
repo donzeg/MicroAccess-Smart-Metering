@@ -15,6 +15,7 @@
 - Inbound/outbound rate limiting in place (including provider 10 rps guard)
 - Retry worker includes failure-reason aggregation for operations observability
 - Unit/integration tests and quality gates are active in each delivery checkpoint
+- GitHub CI now enforces backend lint, typecheck, and test checks on push/PR
 
 ---
 
