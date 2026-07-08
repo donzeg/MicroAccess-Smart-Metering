@@ -78,6 +78,7 @@ Backend implementation is actively in progress and currently includes:
 10. PostgreSQL parity integration verification in CI using a dedicated postgres-backed test job
 11. Management audit-log query/filter endpoint (`GET /api/v1/purchases/audit-logs`) for cross-purchase operations review
 12. Management export endpoints for transaction and reconciliation reporting (`GET /api/v1/ops/exports/transactions`, `GET /api/v1/ops/exports/reconciliation`)
+13. Meter-reading ingestion and aggregation endpoints with customer ownership checks (`POST /api/v1/meters/:meterId/readings`, `GET /api/v1/meters/:meterId/readings`, `GET /api/v1/meters/:meterId/readings/aggregates`)
 
 UI work remains intentionally deferred while backend contracts and reliability controls are being completed.
 

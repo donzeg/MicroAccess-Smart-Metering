@@ -477,6 +477,83 @@ describe('MSM backend integration', () => {
 
     expect(customerExportAttempt.statusCode).toBe(403);
   });
+
+  it('supports meter reading ingestion and aggregation with customer meter ownership checks', async () => {
+    const ingestOne = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-001/readings',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        readingKwh: 13.4,
+        source: 'manual',
+        recordedAt: '2026-07-08T09:00:00.000Z'
+      }
+    });
+
+    expect(ingestOne.statusCode).toBe(201);
+    expect(ingestOne.json()).toMatchObject({
+      meterId: 'meter-abuja-001',
+      readingKwh: 13.4,
+      source: 'manual'
+    });
+
+    const ingestTwo = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-001/readings',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        readingKwh: 10.2,
+        source: 'sync',
+        recordedAt: '2026-07-08T12:00:00.000Z'
+      }
+    });
+
+    expect(ingestTwo.statusCode).toBe(201);
+
+    const customerReadOwnMeter = await app.inject({
+      method: 'GET',
+      url: '/api/v1/meters/meter-abuja-001/readings?limit=20',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerReadOwnMeter.statusCode).toBe(200);
+    expect(customerReadOwnMeter.json().count).toBeGreaterThanOrEqual(2);
+
+    const customerReadForeignMeter = await app.inject({
+      method: 'GET',
+      url: '/api/v1/meters/meter-abuja-003/readings?limit=20',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerReadForeignMeter.statusCode).toBe(403);
+
+    const customerAggregateOwnMeter = await app.inject({
+      method: 'GET',
+      url:
+        '/api/v1/meters/meter-abuja-001/readings/aggregates?bucket=day&fromRecordedAt=2026-07-08T00:00:00.000Z&toRecordedAt=2026-07-08T23:59:59.000Z',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerAggregateOwnMeter.statusCode).toBe(200);
+    expect(customerAggregateOwnMeter.json()).toMatchObject({
+      meterId: 'meter-abuja-001',
+      bucket: 'day',
+      rows: expect.any(Array)
+    });
+    expect(customerAggregateOwnMeter.json().rows.length).toBeGreaterThanOrEqual(1);
+
+    const customerIngestAttempt = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-001/readings',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      payload: {
+        readingKwh: 8.8,
+        source: 'manual'
+      }
+    });
+
+    expect(customerIngestAttempt.statusCode).toBe(403);
+  });
 });
 
 describe('MSM backend rate limiting integration', () => {

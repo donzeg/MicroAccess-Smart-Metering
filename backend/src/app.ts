@@ -16,8 +16,10 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMappingRoutes } from './routes/mappings.js';
+import { registerMeterReadingRoutes } from './routes/meterReadings.js';
 import { registerPurchaseRoutes } from './routes/purchases.js';
 import { CallbackSecurityService } from './services/callbackSecurityService.js';
+import { MeterReadingService } from './services/meterReadingService.js';
 import { ProviderClient, SteamaProviderClient } from './services/providerClient.js';
 import { PurchaseService } from './services/purchaseService.js';
 import { PendingCreditRetryWorker } from './workers/pendingCreditRetryWorker.js';
@@ -25,6 +27,7 @@ import { PendingCreditRetryWorker } from './workers/pendingCreditRetryWorker.js'
 declare module 'fastify' {
   interface FastifyInstance {
     purchaseService: PurchaseService;
+    meterReadingService: MeterReadingService;
     customerMeterRepository: CustomerMeterRepository;
     callbackSecurityService: CallbackSecurityService;
   }
@@ -65,6 +68,7 @@ export const buildApp = (): FastifyInstance => {
     'Backend runtime mode selected'
   );
   const purchaseService = new PurchaseService(providerClient, purchaseRepository, purchaseAuditLogRepository);
+  const meterReadingService = new MeterReadingService();
   const callbackSecurityService = new CallbackSecurityService({
     secret: env.callbackSecret,
     toleranceSeconds: env.callbackToleranceSeconds
@@ -85,6 +89,7 @@ export const buildApp = (): FastifyInstance => {
   });
 
   app.decorate('purchaseService', purchaseService);
+  app.decorate('meterReadingService', meterReadingService);
   app.decorate('customerMeterRepository', customerMeterRepository);
   app.decorate('callbackSecurityService', callbackSecurityService);
 
@@ -114,6 +119,7 @@ export const buildApp = (): FastifyInstance => {
   app.register(registerHealthRoutes);
   app.register(registerAuthRoutes);
   app.register(registerMappingRoutes);
+  app.register(registerMeterReadingRoutes);
   app.register(registerPurchaseRoutes);
   app.register(registerExportRoutes);
 

@@ -67,6 +67,11 @@ Management export endpoints:
 - `GET /api/v1/ops/exports/transactions` (supports `format=json|csv`)
 - `GET /api/v1/ops/exports/reconciliation` (supports `format=json|csv`)
 
+Meter reading endpoints:
+- `POST /api/v1/meters/:meterId/readings` (management-only ingest)
+- `GET /api/v1/meters/:meterId/readings`
+- `GET /api/v1/meters/:meterId/readings/aggregates` (bucketed `hour|day` summary)
+
 ## Local run
 1. Copy `.env.example` to `.env`
 2. Install dependencies: `npm install`

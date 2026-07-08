@@ -199,5 +199,44 @@ describeWhenPostgres('MSM postgres parity integration', () => {
     expect(reconciliationExportCsv.statusCode).toBe(200);
     expect(reconciliationExportCsv.headers['content-type']).toContain('text/csv');
     expect(reconciliationExportCsv.body).toContain('reconciliationStatus');
+
+    const ingestedMeterReading = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meters/meter-abuja-001/readings',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        readingKwh: 14.7,
+        source: 'manual',
+        recordedAt: '2026-07-08T10:00:00.000Z'
+      }
+    });
+
+    expect(ingestedMeterReading.statusCode).toBe(201);
+
+    const meterReadings = await app.inject({
+      method: 'GET',
+      url: '/api/v1/meters/meter-abuja-001/readings?limit=20',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(meterReadings.statusCode).toBe(200);
+    expect(meterReadings.json()).toMatchObject({
+      meterId: 'meter-abuja-001',
+      rows: expect.any(Array)
+    });
+
+    const meterAggregates = await app.inject({
+      method: 'GET',
+      url:
+        '/api/v1/meters/meter-abuja-001/readings/aggregates?bucket=day&fromRecordedAt=2026-07-08T00:00:00.000Z&toRecordedAt=2026-07-08T23:59:59.000Z',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(meterAggregates.statusCode).toBe(200);
+    expect(meterAggregates.json()).toMatchObject({
+      meterId: 'meter-abuja-001',
+      bucket: 'day',
+      rows: expect.any(Array)
+    });
   });
 });

@@ -9,15 +9,15 @@
 ## Current Stage (Now) and Immediate Next
 
 ### Now (Active Implementation)
-- Backend purchase lifecycle reliability and operations controls
-- Auth and customer-to-meter mapping access controls
-- Callback security, retry/reconciliation flows, telemetry endpoints, audit-log filtered querying, and export APIs
+- Backend purchase lifecycle reliability, operations controls, and meter-reading APIs
+- Auth and customer-to-meter mapping access controls with ownership-enforced meter reads
+- Callback security, retry/reconciliation flows, telemetry endpoints, audit-log querying, and export APIs
 - CI enforcement for lint, typecheck, tests, plus postgres parity integration check
 
 ### Next (Immediate Build Order)
-1. Meter-reading ingestion and aggregation implementation slice
-2. Meter analytics/reporting endpoint hardening for management views
-3. Reporting export hardening with scheduled generation and file retention policy
+1. Meter analytics/reporting endpoint hardening for management views
+2. Reporting export hardening with scheduled generation and file retention policy
+3. Provider-backed meter sync worker with retry and observability
 
 ### Not Active Yet
 - Full web and mobile feature implementation (UI remains deferred)
