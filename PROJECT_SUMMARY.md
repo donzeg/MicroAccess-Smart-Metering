@@ -6,6 +6,25 @@
 
 ---
 
+## Current Stage (Now) and Immediate Next
+
+### Now (Active Implementation)
+- Backend purchase lifecycle reliability and operations controls
+- Auth and customer-to-meter mapping access controls
+- Callback security, retry/reconciliation flows, and telemetry endpoints
+- CI enforcement for lint, typecheck, tests, plus postgres parity integration check
+
+### Next (Immediate Build Order)
+1. Audit-log query and filtering endpoints for operations review
+2. Management export API contracts (reconciliation and transaction reporting)
+3. Meter-reading ingestion and aggregation implementation slice
+
+### Not Active Yet
+- Full web and mobile feature implementation (UI remains deferred)
+- Advanced meter analytics dashboards beyond backend contract completion
+
+---
+
 ##  Deliverables Summary
 
 ### 0. **Current Backend Build Progress (Live)**
