@@ -174,5 +174,30 @@ describeWhenPostgres('MSM postgres parity integration', () => {
         reconciled: expect.any(Number)
       }
     });
+
+    const transactionExport = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/exports/transactions?states=credited,reconciled&limit=20&offset=0&format=json',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(transactionExport.statusCode).toBe(200);
+    expect(transactionExport.json()).toMatchObject({
+      summary: {
+        count: expect.any(Number),
+        totalAmount: expect.any(Number)
+      },
+      rows: expect.any(Array)
+    });
+
+    const reconciliationExportCsv = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/exports/reconciliation?states=failed,reconciled&limit=20&offset=0&format=csv',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(reconciliationExportCsv.statusCode).toBe(200);
+    expect(reconciliationExportCsv.headers['content-type']).toContain('text/csv');
+    expect(reconciliationExportCsv.body).toContain('reconciliationStatus');
   });
 });

@@ -392,6 +392,91 @@ describe('MSM backend integration', () => {
 
     expect(customerResponse.statusCode).toBe(403);
   });
+
+  it('exports transaction and reconciliation reports for management', async () => {
+    const creditedInitiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 4100 }
+    });
+    expect(creditedInitiated.statusCode).toBe(201);
+    const creditedPurchaseId = creditedInitiated.json().id as string;
+
+    const paymentConfirmed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchases/${creditedPurchaseId}/payment-confirmed`,
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(paymentConfirmed.statusCode).toBe(200);
+
+    const credited = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchases/${creditedPurchaseId}/credit-provider`,
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(credited.statusCode).toBe(200);
+    expect(credited.json().state).toBe('credited');
+
+    const failedInitiated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/purchases/initiate',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { customerId: '1622913', amount: 4200 }
+    });
+    expect(failedInitiated.statusCode).toBe(201);
+    const failedPurchaseId = failedInitiated.json().id as string;
+
+    const failedPayload = {
+      purchaseId: failedPurchaseId,
+      status: 'failed' as const
+    };
+    const failedCallback = await app.inject({
+      method: 'POST',
+      url: '/api/v1/payments/callback',
+      headers: buildCallbackHeaders(failedPayload, `${failedPurchaseId}-export-failed`),
+      payload: failedPayload
+    });
+    expect(failedCallback.statusCode).toBe(200);
+    expect(failedCallback.json().state).toBe('failed');
+
+    const transactionExport = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/exports/transactions?customerId=1622913&states=credited,failed&limit=50&offset=0&format=json',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(transactionExport.statusCode).toBe(200);
+    expect(transactionExport.json()).toMatchObject({
+      summary: {
+        count: expect.any(Number),
+        totalAmount: expect.any(Number),
+        stateCounts: expect.any(Object)
+      },
+      rows: expect.any(Array)
+    });
+    const transactionRows = transactionExport.json().rows as Array<{ state: string }>;
+    expect(transactionRows.length).toBeGreaterThanOrEqual(2);
+    expect(transactionRows.every((row) => ['credited', 'failed'].includes(row.state))).toBe(true);
+
+    const reconciliationExportCsv = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/exports/reconciliation?states=failed,reconciled&limit=50&offset=0&format=csv',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(reconciliationExportCsv.statusCode).toBe(200);
+    expect(reconciliationExportCsv.headers['content-type']).toContain('text/csv');
+    expect(reconciliationExportCsv.body).toContain('purchaseId,customerId,amount,state,reconciliationStatus');
+
+    const customerExportAttempt = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ops/exports/transactions?limit=10',
+      headers: { Authorization: `Bearer ${customerToken}` }
+    });
+
+    expect(customerExportAttempt.statusCode).toBe(403);
+  });
 });
 
 describe('MSM backend rate limiting integration', () => {

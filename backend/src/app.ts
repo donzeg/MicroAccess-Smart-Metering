@@ -13,6 +13,7 @@ import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogR
 import { createPgPool, runPgMigrations } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerExportRoutes } from './routes/exports.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMappingRoutes } from './routes/mappings.js';
 import { registerPurchaseRoutes } from './routes/purchases.js';
@@ -114,6 +115,7 @@ export const buildApp = (): FastifyInstance => {
   app.register(registerAuthRoutes);
   app.register(registerMappingRoutes);
   app.register(registerPurchaseRoutes);
+  app.register(registerExportRoutes);
 
   return app;
 };

@@ -1,5 +1,6 @@
 import type { PurchaseRecord } from '../types/purchase.js';
 import type { PurchaseRepository } from './interfaces.js';
+import type { PurchaseListQuery } from '../types/purchase.js';
 
 const cloneRecord = (record: PurchaseRecord): PurchaseRecord => ({
   ...record,
@@ -27,12 +28,32 @@ export class InMemoryPurchaseRepository implements PurchaseRepository {
   }
 
   async listByState(state: PurchaseRecord['state'], limit: number): Promise<PurchaseRecord[]> {
-    const values = Array.from(this.store.values())
-      .filter((record) => record.state === state)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .slice(0, limit)
-      .map((record) => cloneRecord(record));
+    return this.list({ states: [state], limit, offset: 0 });
+  }
 
-    return values;
+  async list(query: PurchaseListQuery): Promise<PurchaseRecord[]> {
+    return Array.from(this.store.values())
+      .filter((record) => {
+        if (query.customerId && record.customerId !== query.customerId) {
+          return false;
+        }
+
+        if (query.states && query.states.length > 0 && !query.states.includes(record.state)) {
+          return false;
+        }
+
+        if (query.fromCreatedAt && record.createdAt < query.fromCreatedAt) {
+          return false;
+        }
+
+        if (query.toCreatedAt && record.createdAt > query.toCreatedAt) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(query.offset, query.offset + query.limit)
+      .map((record) => cloneRecord(record));
   }
 }

@@ -44,6 +44,15 @@ export interface PurchaseAuditLogQuery {
   offset: number;
 }
 
+export interface PurchaseListQuery {
+  customerId?: string;
+  states?: PurchaseState[];
+  fromCreatedAt?: string;
+  toCreatedAt?: string;
+  limit: number;
+  offset: number;
+}
+
 export interface PaymentCallbackPayload {
   purchaseId: string;
   status: 'confirmed' | 'failed';

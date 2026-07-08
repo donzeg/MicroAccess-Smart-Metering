@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 
-import type { PurchaseRecord, PurchaseTransition } from '../types/purchase.js';
+import type { PurchaseListQuery, PurchaseRecord, PurchaseTransition } from '../types/purchase.js';
 import type { PurchaseRepository } from './interfaces.js';
 
 interface PurchaseRow {
@@ -76,15 +76,49 @@ export class PgPurchaseRepository implements PurchaseRepository {
   }
 
   async listByState(state: PurchaseRecord['state'], limit: number): Promise<PurchaseRecord[]> {
+    return this.list({ states: [state], limit, offset: 0 });
+  }
+
+  async list(query: PurchaseListQuery): Promise<PurchaseRecord[]> {
+    const whereParts: string[] = [];
+    const params: unknown[] = [];
+
+    if (query.customerId) {
+      params.push(query.customerId);
+      whereParts.push(`customer_id = $${params.length}`);
+    }
+
+    if (query.states && query.states.length > 0) {
+      params.push(query.states);
+      whereParts.push(`state = ANY($${params.length}::text[])`);
+    }
+
+    if (query.fromCreatedAt) {
+      params.push(query.fromCreatedAt);
+      whereParts.push(`created_at >= $${params.length}::timestamptz`);
+    }
+
+    if (query.toCreatedAt) {
+      params.push(query.toCreatedAt);
+      whereParts.push(`created_at <= $${params.length}::timestamptz`);
+    }
+
+    params.push(query.limit);
+    const limitParam = `$${params.length}`;
+    params.push(query.offset);
+    const offsetParam = `$${params.length}`;
+    const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+
     const result = await this.pool.query<{ id: string }>(
       `
       SELECT id
       FROM purchases
-      WHERE state = $1
-      ORDER BY created_at ASC
-      LIMIT $2
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
       `,
-      [state, limit]
+      params
     );
 
     const records: PurchaseRecord[] = [];

@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { CreditProvider } from './providerClient.js';
 import type { PurchaseAuditLogRepository, PurchaseRepository } from '../repositories/interfaces.js';
-import type { PaymentCallbackPayload, PurchaseAuditLog, PurchaseAuditLogQuery, PurchaseRecord, PurchaseState } from '../types/purchase.js';
+import type {
+  PaymentCallbackPayload,
+  PurchaseAuditLog,
+  PurchaseAuditLogQuery,
+  PurchaseListQuery,
+  PurchaseRecord,
+  PurchaseState
+} from '../types/purchase.js';
 
 export interface RetryPendingResult {
   attempted: number;
@@ -324,6 +331,10 @@ export class PurchaseService {
 
   async queryAuditLogs(query: PurchaseAuditLogQuery): Promise<PurchaseAuditLog[]> {
     return this.purchaseAuditLogRepository.list(query);
+  }
+
+  async listPurchases(query: PurchaseListQuery): Promise<PurchaseRecord[]> {
+    return this.purchaseRepository.list(query);
   }
 
   private async mustGet(purchaseId: string): Promise<PurchaseRecord> {

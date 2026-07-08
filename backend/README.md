@@ -63,6 +63,10 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - `GET /api/v1/purchases/audit-logs`
 - `GET /api/v1/purchases/:purchaseId/audit-logs`
 
+Management export endpoints:
+- `GET /api/v1/ops/exports/transactions` (supports `format=json|csv`)
+- `GET /api/v1/ops/exports/reconciliation` (supports `format=json|csv`)
+
 ## Local run
 1. Copy `.env.example` to `.env`
 2. Install dependencies: `npm install`
