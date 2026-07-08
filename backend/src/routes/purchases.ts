@@ -29,7 +29,13 @@ const auditLogQuerySchema = z.object({
 export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void> => {
   app.post(
     '/api/v1/purchases/initiate',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    {
+      onRequest: [
+        app.verifyJwt,
+        app.requireRoles(['management', 'customer']),
+        app.rateLimitGuard('purchases_initiate')
+      ]
+    },
     async (request, reply) => {
     const parsed = initiateSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -48,7 +54,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.post(
     '/api/v1/purchases/:purchaseId/payment-confirmed',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
     async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -65,7 +71,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
   }
   );
 
-  app.post('/api/v1/payments/callback', async (request, reply) => {
+  app.post('/api/v1/payments/callback', { onRequest: [app.rateLimitGuard('callback')] }, async (request, reply) => {
     const parsed = paymentCallbackSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ message: 'Invalid callback payload', errors: parsed.error.flatten() });
@@ -88,7 +94,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.post(
     '/api/v1/purchases/retry-pending',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
     async (request, reply) => {
     const parsed = retryPendingSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -103,7 +109,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.post(
     '/api/v1/purchases/:purchaseId/credit-provider',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
     async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -122,7 +128,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.post(
     '/api/v1/purchases/:purchaseId/reconcile',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
     async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -141,7 +147,9 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.get(
     '/api/v1/purchases/:purchaseId',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    {
+      onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer']), app.rateLimitGuard('reads')]
+    },
     async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -164,7 +172,7 @@ export const registerPurchaseRoutes = async (app: FastifyInstance): Promise<void
 
   app.get(
     '/api/v1/purchases/:purchaseId/audit-logs',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
     async (request, reply) => {
     const params = idParamsSchema.safeParse(request.params);
     const query = auditLogQuerySchema.safeParse(request.query ?? {});

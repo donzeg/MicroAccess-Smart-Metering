@@ -50,6 +50,7 @@ export interface SteamaProviderClientOptions {
   username: string;
   password: string;
   timeoutMs: number;
+  requestsPerSecond: number;
 }
 
 interface CachedToken {
@@ -57,10 +58,40 @@ interface CachedToken {
   expiresAt: number;
 }
 
+class ProviderRequestThrottle {
+  private readonly intervalMs: number;
+  private queue = Promise.resolve();
+  private nextAllowedAt = 0;
+
+  constructor(requestsPerSecond: number) {
+    this.intervalMs = Math.max(1, Math.ceil(1000 / Math.max(1, requestsPerSecond)));
+  }
+
+  async waitTurn(): Promise<void> {
+    const run = async (): Promise<void> => {
+      const now = Date.now();
+      const delayMs = Math.max(0, this.nextAllowedAt - now);
+      if (delayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, delayMs);
+        });
+      }
+
+      this.nextAllowedAt = Math.max(this.nextAllowedAt, Date.now()) + this.intervalMs;
+    };
+
+    this.queue = this.queue.then(run, run);
+    await this.queue;
+  }
+}
+
 export class SteamaProviderClient implements CreditProvider {
   private cachedToken: CachedToken | null = null;
+  private readonly throttle: ProviderRequestThrottle;
 
-  constructor(private readonly options: SteamaProviderClientOptions) {}
+  constructor(private readonly options: SteamaProviderClientOptions) {
+    this.throttle = new ProviderRequestThrottle(options.requestsPerSecond);
+  }
 
   async postCustomerCredit(request: ProviderCreditRequest): Promise<ProviderCreditResult> {
     if (request.amount <= 0) {
@@ -73,6 +104,7 @@ export class SteamaProviderClient implements CreditProvider {
 
     try {
       const token = await this.getAccessToken();
+      await this.throttle.waitTurn();
       const endpoint = `${this.normalizeBaseUrl()}/customers/${encodeURIComponent(request.customerId)}/transactions/`;
       const body = {
         amount: request.amount.toFixed(2),
@@ -122,6 +154,7 @@ export class SteamaProviderClient implements CreditProvider {
     }
 
     const endpoint = `${this.normalizeBaseUrl()}${this.normalizePath(this.options.tokenPath)}`;
+    await this.throttle.waitTurn();
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {

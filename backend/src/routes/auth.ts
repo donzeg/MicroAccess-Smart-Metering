@@ -16,7 +16,7 @@ const signToken = (payload: { sub: string; role: AuthRole; customerId?: string }
 };
 
 export const registerAuthRoutes = async (app: FastifyInstance): Promise<void> => {
-  app.post('/api/v1/auth/login', async (request, reply) => {
+  app.post('/api/v1/auth/login', { onRequest: [app.rateLimitGuard('auth_login')] }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ message: 'Invalid login payload', errors: parsed.error.flatten() });

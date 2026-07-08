@@ -23,6 +23,11 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Replay protection blocks reused callback IDs within the tolerance window.
 - Config keys: `CALLBACK_SECRET`, `CALLBACK_TOLERANCE_SECONDS`.
 
+## Request throttling
+- Inbound API endpoints have fixed-window rate limits by policy (auth, purchase initiation, callback, management ops, reads).
+- Outbound provider calls are throttled to `PROVIDER_RATE_LIMIT_RPS` (default 10 rps) to respect provider constraints.
+- Config keys: `AUTH_LOGIN_LIMIT_PER_MINUTE`, `PURCHASE_INITIATE_LIMIT_PER_MINUTE`, `CALLBACK_LIMIT_PER_MINUTE`, `MANAGEMENT_OPS_LIMIT_PER_MINUTE`, `READS_LIMIT_PER_MINUTE`, `PROVIDER_RATE_LIMIT_RPS`.
+
 ## Provider integration modes
 - Default mode: local idempotent provider simulation for development and tests.
 - Live mode: set `STEAMA_ENABLED=true` and provide service credentials in `.env`.

@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 
 import { env } from './config/env.js';
 import { authPlugin } from './plugins/auth.js';
+import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { InMemoryPurchaseAuditLogRepository } from './repositories/inMemoryPurchaseAuditLogRepository.js';
 import { InMemoryCustomerMeterRepository } from './repositories/inMemoryCustomerMeterRepository.js';
 import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepository.js';
@@ -53,7 +54,8 @@ export const buildApp = (): FastifyInstance => {
         tokenPath: env.steamaTokenPath,
         username: env.steamaUsername,
         password: env.steamaPassword,
-        timeoutMs: env.steamaTimeoutMs
+        timeoutMs: env.steamaTimeoutMs,
+        requestsPerSecond: env.providerRateLimitRps
       })
     : new ProviderClient();
 
@@ -99,6 +101,7 @@ export const buildApp = (): FastifyInstance => {
   }
 
   app.register(authPlugin);
+  app.register(rateLimitPlugin);
   app.register(registerHealthRoutes);
   app.register(registerAuthRoutes);
   app.register(registerMappingRoutes);

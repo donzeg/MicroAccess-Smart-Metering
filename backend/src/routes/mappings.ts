@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 export const registerMappingRoutes = async (app: FastifyInstance): Promise<void> => {
   app.get(
     '/api/v1/customers/:customerId/meters',
-    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer'])] },
+    { onRequest: [app.verifyJwt, app.requireRoles(['management', 'customer']), app.rateLimitGuard('reads')] },
     async (request, reply) => {
     const customerId = (request.params as { customerId: string }).customerId;
     const user = request.user;
