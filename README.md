@@ -537,16 +537,20 @@ process list for host restarts. It does not restart unrelated PM2 applications.
 Set `MSM_PUBLIC_ORIGIN` before deployment only when the external address changes.
 The default is `http://100.112.217.3:4173`.
 
-If PostgreSQL reports that authentication failed for the dedicated `msm` role,
-an administrator can align that role with the already configured, private
-`backend/.env` value without displaying the password:
+If PostgreSQL reports that authentication failed or that the dedicated `msm`
+role does not exist, an administrator can create or align the local role and
+database with the already configured, private `backend/.env` value without
+displaying the password:
 
 ```bash
 ./scripts/configure-postgres-role.sh
 ```
 
 This helper refuses non-local hosts and any role or database other than `msm`.
-It requires the server administrator's normal `sudo` confirmation.
+It creates only the missing local `msm` role/database, grants that role its
+schema, and verifies application authentication. It requires the server
+administrator's normal `sudo` confirmation. Application migrations remain
+owned by the backend startup process.
 
 Operational notes:
 - Keep Steama credentials server-side only
