@@ -48,6 +48,8 @@ export interface MeterSummary {
 
 export interface CustomerSummary {
 	providerId: string;
+	firstName: string;
+	lastName: string;
 	displayName: string;
 	accountNumber: string;
 	siteName: string;
@@ -57,6 +59,100 @@ export interface CustomerSummary {
 	energyPrice: number | null;
 	tariffBand: string;
 	controlType: string;
+}
+
+export type FloorKey =
+	| 'ground-floor'
+	| 'first-floor'
+	| 'second-floor'
+	| 'third-floor'
+	| 'fourth-floor'
+	| 'fifth-floor'
+	| 'unclassified';
+
+export type FloorMappingEvidence = 'structured_name' | 'legacy_code' | 'unclassified';
+
+export interface FloorPositionUsage {
+	customerId: string;
+	providerPositionName: string;
+	positionLabel: string;
+	tenantName: string;
+	occupancyStatus: 'named_tenant' | 'estate_placeholder' | 'not_recorded';
+	floorKey: FloorKey;
+	floorLabel: string;
+	floorLevel: number | null;
+	mappingEvidence: FloorMappingEvidence;
+	meterIds: string[];
+	meterNumbers: string[];
+	meterCount: number;
+	onlineMeterCount: number;
+	usageKwh: number;
+	estimatedValueNgn: number;
+	observedIntervals: number;
+	expectedIntervals: number;
+	coveragePercent: number;
+	firstReadingAt: string | null;
+	latestReadingAt: string | null;
+}
+
+export interface FloorUsageSummary {
+	key: FloorKey;
+	label: string;
+	level: number | null;
+	positionCount: number;
+	meteredPositionCount: number;
+	reportingPositionCount: number;
+	meterCount: number;
+	onlineMeterCount: number;
+	usageKwh: number;
+	sharePercent: number;
+	estimatedValueNgn: number;
+	observedIntervals: number;
+	expectedIntervals: number;
+	coveragePercent: number;
+}
+
+export interface FloorUsageBucket {
+	key: string;
+	label: string;
+	from: string;
+	to: string;
+	totalKwh: number;
+	floors: Array<{ floorKey: FloorKey; usageKwh: number }>;
+}
+
+export interface FloorAnalysis {
+	dataSource: {
+		provider: 'SteamaCo';
+		mode: 'live_read_only';
+		retrievedAt: string;
+		scope: 'provider_customer_meter_directives';
+		cached: boolean;
+	};
+	site: { name: 'Na-Aka Hub'; structure: 'Ground floor plus Floors 1–5' };
+	period: EnergyMixPeriod;
+	range: { from: string; to: string; timezone: 'Africa/Lagos' };
+	tariff: { retailNgnPerKwh: number; currency: 'NGN'; status: 'provisional' };
+	summary: {
+		totalPositions: number;
+		classifiedPositions: number;
+		unclassifiedPositions: number;
+		meteredPositions: number;
+		reportingPositions: number;
+		totalMeters: number;
+		onlineMeters: number;
+		totalUsageKwh: number;
+		classifiedUsageKwh: number;
+		unclassifiedUsageKwh: number;
+		estimatedValueNgn: number;
+		observedIntervals: number;
+		expectedIntervals: number;
+		coveragePercent: number;
+	};
+	floors: FloorUsageSummary[];
+	positions: FloorPositionUsage[];
+	buckets: FloorUsageBucket[];
+	warnings: string[];
 }
 
 export interface MeterReadingPoint {

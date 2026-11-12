@@ -2,6 +2,7 @@
 	import {
 		AlertTriangle,
 		BarChart3,
+		Building2,
 		CircleDollarSign,
 		Gauge,
 		LayoutDashboard,
@@ -17,7 +18,7 @@
 	} from '@lucide/svelte';
 	import { onMount, type Snippet } from 'svelte';
 
-	type NavKey = 'dashboard' | 'energy' | 'revenue' | 'meters' | 'customers' | 'exceptions' | 'reports';
+	type NavKey = 'dashboard' | 'energy' | 'revenue' | 'floors' | 'meters' | 'customers' | 'exceptions' | 'reports';
 	let { active, children }: { active: NavKey; children: Snippet } = $props();
 	let collapsed = $state(false);
 	let theme = $state<'light' | 'dark'>('light');
@@ -46,6 +47,7 @@
 		{ key: 'dashboard' as const, href: '/', label: 'Command centre', icon: LayoutDashboard },
 		{ key: 'energy' as const, href: '/energy-mix', label: 'Energy mix', icon: SunMedium },
 		{ key: 'revenue' as const, href: '/revenue-costs', label: 'Revenue & cost', icon: CircleDollarSign },
+		{ key: 'floors' as const, href: '/floors', label: 'Floor operations', icon: Building2 },
 		{ key: 'meters' as const, href: '/meters', label: 'Meter operations', icon: Gauge },
 		{ key: 'customers' as const, href: '/customers', label: 'Customer accounts', icon: Users },
 		{ key: 'exceptions' as const, href: '/exceptions', label: 'Exceptions', icon: AlertTriangle },

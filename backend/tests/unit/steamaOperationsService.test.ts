@@ -335,4 +335,78 @@ describe('SteamaOperationsService', () => {
       vi.useRealTimers();
     }
   });
+
+  it('classifies Na-Aka Hub positions and totals only assigned customer-meter interval usage', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-12T09:15:00Z'));
+
+    try {
+      const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+        if (path === '/meters/') {
+          return Promise.resolve({
+            count: 3,
+            results: [
+              { id: 1, reference: 'LOAD-1', meter_type_name: 'DS3600', customer: 10, customer_name: 'F07 Na-aka Hub', offline_duration_status: 'Online' },
+              { id: 2, reference: 'LOAD-2', meter_type_name: 'DS3100', customer: 11, customer_name: '3rd Floor - 01 - 04 BOI', offline_duration_status: 'Offline (2 days)' },
+              { id: 3, reference: 'SOLAR', meter_type_name: 'DS3100', customer: 12, customer_name: 'Power Room Solar meter', offline_duration_status: 'Online' }
+            ]
+          });
+        }
+        if (path === '/customers/') {
+          return Promise.resolve({
+            count: 4,
+            results: [
+              { id: 10, first_name: 'F07', last_name: 'Na-aka Hub' },
+              { id: 11, first_name: '3rd Floor - 01 - 04', last_name: 'BOI' },
+              { id: 12, first_name: 'Power Room', last_name: 'Solar meter' },
+              { id: 13, first_name: 'G01', last_name: 'Na-aka Hub' }
+            ]
+          });
+        }
+        if (path === '/sites/') return Promise.resolve({ count: 1, results: [{ id: 20, name: 'Na-Aka Hub' }] });
+        if (path === '/meters/1/directives/') {
+          return Promise.resolve({ count: 1, results: [{ timestamp: '2026-11-12T08:00:00Z', data: JSON.stringify({ usage_amount: 3 }) }] });
+        }
+        if (path === '/meters/2/directives/') {
+          return Promise.resolve({ count: 1, results: [{ timestamp: '2026-11-12T08:00:00Z', data: JSON.stringify({ usage_amount: 10 }) }] });
+        }
+        throw new Error(`unexpected_path:${path}`);
+      });
+
+      const result = await new SteamaOperationsService(
+        { request },
+        60_000,
+        { retailTariffNgnPerKwh: 203 }
+      ).getFloorAnalysis('hourly');
+
+      expect(result.summary).toMatchObject({
+        totalPositions: 3,
+        classifiedPositions: 3,
+        unclassifiedPositions: 0,
+        meteredPositions: 2,
+        reportingPositions: 2,
+        totalMeters: 2,
+        totalUsageKwh: 13,
+        estimatedValueNgn: 2639,
+        observedIntervals: 2,
+        expectedIntervals: 48
+      });
+      expect(result.floors.find((floor) => floor.key === 'first-floor')).toMatchObject({
+        positionCount: 1,
+        usageKwh: 3
+      });
+      expect(result.floors.find((floor) => floor.key === 'third-floor')).toMatchObject({
+        positionCount: 1,
+        usageKwh: 10
+      });
+      expect(result.positions.find((position) => position.customerId === '10')).toMatchObject({
+        floorKey: 'first-floor',
+        mappingEvidence: 'legacy_code',
+        occupancyStatus: 'estate_placeholder'
+      });
+      expect(result.positions.some((position) => position.tenantName === 'Solar meter')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -537,6 +537,14 @@ process list for host restarts. It does not restart unrelated PM2 applications.
 Set `MSM_PUBLIC_ORIGIN` before deployment only when the external address changes.
 The default is `http://100.112.217.3:4173`.
 
+The live workspace includes dedicated Energy Mix, Revenue & Cost and Floor
+Operations modules. Floor Operations interprets the provider first name as the
+stable Na-Aka Hub floor/position label and the last name as the current tenant
+snapshot. Its overview compares Ground Floor and Floors 1–5, while each floor
+has a separate drill-down page for position, tenant, meter, connectivity,
+interval usage, provisional value and reading coverage. Unrecognized names are
+kept in an explicit Unclassified group.
+
 If PostgreSQL reports that authentication failed or that the dedicated `msm`
 role does not exist, an administrator can create or align the local role and
 database with the already configured, private `backend/.env` value without

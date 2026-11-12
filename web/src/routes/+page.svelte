@@ -80,6 +80,7 @@
 
 		<section class="boundary-grid">
 			<a class="boundary ready" href="/energy-mix"><strong>Solar and grid contribution</strong><span>Compare matched hourly, daily, weekly and monthly source usage against the 90–95% solar target.</span></a>
+			<a class="boundary ready" href="/floors"><strong>Floor-by-floor operations</strong><span>Compare tenant-meter usage across Ground Floor and Floors 1–5, then inspect each permanent unit position.</span></a>
 			<a class="boundary ready" href="/reports"><strong>Reports and recent history</strong><span>Review dated kWh readings, usage trends and account ledger movement.</span></a>
 			<a class="boundary" href="/customers"><strong>Customer account operations</strong><span>Separate monetary account balances from meter energy readings.</span></a>
 			<div class="boundary blocked"><strong>Payment automation remains controlled</strong><span>Credit posting and remote commands remain disabled until the vendor contract is certified.</span></div>
@@ -120,7 +121,7 @@
 	.exception-grid a > strong { float: right; color: var(--navy); font-size: 1.3rem; }
 	.exception-grid h3 { margin: .8rem 0 .35rem; color: var(--navy); font-size: .75rem; }
 	.exception-grid p { margin: 0; color: var(--text-muted); font-size: .64rem; line-height: 1.45; }
-	.boundary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-top: .75rem; }
+	.boundary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-top: .75rem; }
 	.boundary { display: block; padding: 1rem; color: inherit; text-decoration: none; }
 	.boundary strong, .boundary span { display: block; }
 	.boundary strong { color: var(--navy); font-size: .78rem; }

@@ -161,6 +161,45 @@ export const registerSteamaOperationsRoutes = async (app: FastifyInstance): Prom
   );
 
   app.get(
+    '/api/v1/ops/steama/floors',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
+    async (request, reply) => {
+      if (!app.steamaOperationsService) {
+        return reply.code(503).send({
+          code: 'provider_not_configured',
+          message: 'The SteamaCo read-only integration has not been configured.'
+        });
+      }
+
+      const parsed = energyMixQuerySchema.safeParse(request.query);
+      if (
+        !parsed.success ||
+        !validEnergyRange(
+          parsed.success ? parsed.data.period : '',
+          parsed.success ? parsed.data.from : undefined,
+          parsed.success ? parsed.data.to : undefined
+        )
+      ) {
+        return reply.code(400).send({ code: 'invalid_query', message: 'Invalid floor analysis query.' });
+      }
+
+      try {
+        return await app.steamaOperationsService.getFloorAnalysis(
+          parsed.data.period,
+          parsed.data.refresh === 'true',
+          parsed.data.from && parsed.data.to ? { from: parsed.data.from, to: parsed.data.to } : undefined
+        );
+      } catch (error) {
+        request.log.error(
+          { errorCode: error instanceof SteamaReadOnlyError ? error.code : 'unknown' },
+          'Steama floor analysis failed'
+        );
+        return sendProviderError(error, reply);
+      }
+    }
+  );
+
+  app.get(
     '/api/v1/ops/steama/meters/:providerId',
     { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
     async (request, reply) => {

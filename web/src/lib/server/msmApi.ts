@@ -3,6 +3,7 @@ import type {
 	DashboardError,
 	EnergyMix,
 	EnergyMixPeriod,
+	FloorAnalysis,
 	MeterHistory,
 	MeterSummary,
 	OperationsOverview,
@@ -192,5 +193,26 @@ export const loadRevenueAnalysis = (
 		token,
 		`/api/v1/ops/steama/revenue-costs?${query.toString()}`,
 		'The revenue and energy cost analysis could not be loaded.'
+	);
+};
+
+export const loadFloorAnalysis = (
+	fetcher: typeof fetch,
+	token: string,
+	period: EnergyMixPeriod,
+	forceRefresh = false,
+	range?: { from: string; to: string }
+) => {
+	const query = new URLSearchParams({ period });
+	if (forceRefresh) query.set('refresh', 'true');
+	if (range) {
+		query.set('from', range.from);
+		query.set('to', range.to);
+	}
+	return loadProtectedResource<FloorAnalysis>(
+		fetcher,
+		token,
+		`/api/v1/ops/steama/floors?${query.toString()}`,
+		'The floor-by-floor analysis could not be loaded.'
 	);
 };

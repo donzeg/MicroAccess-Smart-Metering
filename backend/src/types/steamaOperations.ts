@@ -51,6 +51,8 @@ export interface SteamaMeterSummary {
 
 export interface SteamaCustomerSummary {
   providerId: string;
+  firstName: string;
+  lastName: string;
   displayName: string;
   accountNumber: string;
   siteName: string;
@@ -60,6 +62,114 @@ export interface SteamaCustomerSummary {
   energyPrice: number | null;
   tariffBand: string;
   controlType: string;
+}
+
+export type SteamaFloorKey =
+  | 'ground-floor'
+  | 'first-floor'
+  | 'second-floor'
+  | 'third-floor'
+  | 'fourth-floor'
+  | 'fifth-floor'
+  | 'unclassified';
+
+export type SteamaFloorMappingEvidence = 'structured_name' | 'legacy_code' | 'unclassified';
+
+export interface SteamaFloorPositionUsage {
+  customerId: string;
+  providerPositionName: string;
+  positionLabel: string;
+  tenantName: string;
+  occupancyStatus: 'named_tenant' | 'estate_placeholder' | 'not_recorded';
+  floorKey: SteamaFloorKey;
+  floorLabel: string;
+  floorLevel: number | null;
+  mappingEvidence: SteamaFloorMappingEvidence;
+  meterIds: string[];
+  meterNumbers: string[];
+  meterCount: number;
+  onlineMeterCount: number;
+  usageKwh: number;
+  estimatedValueNgn: number;
+  observedIntervals: number;
+  expectedIntervals: number;
+  coveragePercent: number;
+  firstReadingAt: string | null;
+  latestReadingAt: string | null;
+}
+
+export interface SteamaFloorUsageSummary {
+  key: SteamaFloorKey;
+  label: string;
+  level: number | null;
+  positionCount: number;
+  meteredPositionCount: number;
+  reportingPositionCount: number;
+  meterCount: number;
+  onlineMeterCount: number;
+  usageKwh: number;
+  sharePercent: number;
+  estimatedValueNgn: number;
+  observedIntervals: number;
+  expectedIntervals: number;
+  coveragePercent: number;
+}
+
+export interface SteamaFloorUsageBucket {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+  totalKwh: number;
+  floors: Array<{
+    floorKey: SteamaFloorKey;
+    usageKwh: number;
+  }>;
+}
+
+export interface SteamaFloorAnalysis {
+  dataSource: {
+    provider: 'SteamaCo';
+    mode: 'live_read_only';
+    retrievedAt: string;
+    scope: 'provider_customer_meter_directives';
+    cached: boolean;
+  };
+  site: {
+    name: 'Na-Aka Hub';
+    structure: 'Ground floor plus Floors 1–5';
+  };
+  period: EnergyMixPeriod;
+  range: {
+    from: string;
+    to: string;
+    timezone: 'Africa/Lagos';
+  };
+  tariff: {
+    retailNgnPerKwh: number;
+    currency: 'NGN';
+    status: 'provisional';
+  };
+  summary: {
+    totalPositions: number;
+    classifiedPositions: number;
+    unclassifiedPositions: number;
+    meteredPositions: number;
+    reportingPositions: number;
+    totalMeters: number;
+    onlineMeters: number;
+    totalUsageKwh: number;
+    classifiedUsageKwh: number;
+    unclassifiedUsageKwh: number;
+    estimatedValueNgn: number;
+    observedIntervals: number;
+    expectedIntervals: number;
+    coveragePercent: number;
+  };
+  floors: SteamaFloorUsageSummary[];
+  positions: SteamaFloorPositionUsage[];
+  buckets: SteamaFloorUsageBucket[];
+  warnings: string[];
 }
 
 export interface SteamaMeterReadingPoint {

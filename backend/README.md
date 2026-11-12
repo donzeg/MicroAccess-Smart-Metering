@@ -55,6 +55,10 @@ The management web application uses these server-side endpoints:
 - `GET /api/v1/ops/steama/revenue-costs` — read-only customer usage-charge,
   source-attribution and retail energy-value analysis. It deliberately keeps
   usage charges, cash collections and AEDC settlement separate;
+- `GET /api/v1/ops/steama/floors` — read-only floor and permanent-position
+  consumption analysis for Na-Aka Hub. It supports presets or exact dates,
+  excludes source accounts and preserves unclassified names rather than
+  guessing their location;
 - `GET /api/v1/ops/runtime-capabilities` — safe runtime feature status.
 
 All endpoints require a management JWT. They return normalized operational

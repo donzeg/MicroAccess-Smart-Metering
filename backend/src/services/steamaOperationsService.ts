@@ -11,6 +11,12 @@ import type {
   SteamaEnergyMix,
   SteamaEnergyMixBucket,
   SteamaEnergyMixSourceMeter,
+  SteamaFloorAnalysis,
+  SteamaFloorKey,
+  SteamaFloorMappingEvidence,
+  SteamaFloorPositionUsage,
+  SteamaFloorUsageBucket,
+  SteamaFloorUsageSummary,
   SteamaMeterHistory,
   SteamaMeterReadingPoint,
   SteamaMeterSummary,
@@ -46,6 +52,11 @@ interface CachedEnergyMix {
 
 interface CachedRevenueAnalysis {
   value: SteamaRevenueAnalysis;
+  expiresAt: number;
+}
+
+interface CachedFloorAnalysis {
+  value: SteamaFloorAnalysis;
   expiresAt: number;
 }
 
@@ -384,6 +395,8 @@ const normalizeCustomer = (
   const observedMeterNumbers = meterNumbersByCustomer.get(providerId) ?? [];
   return {
     providerId,
+    firstName,
+    lastName,
     displayName,
     accountNumber: stringValue(firstValue(record, ['account_number', 'index_number', 'integration_id'])),
     siteName: labelValue(firstValue(record, ['site_name', 'site'])) || 'Not provided',
@@ -526,6 +539,148 @@ const createEnergyBuckets = (
   return buckets;
 };
 
+interface FloorDefinition {
+  key: Exclude<SteamaFloorKey, 'unclassified'>;
+  label: string;
+  level: number;
+}
+
+const FLOOR_DEFINITIONS: FloorDefinition[] = [
+  { key: 'ground-floor', label: 'Ground Floor', level: 0 },
+  { key: 'first-floor', label: 'First Floor', level: 1 },
+  { key: 'second-floor', label: 'Second Floor', level: 2 },
+  { key: 'third-floor', label: 'Third Floor', level: 3 },
+  { key: 'fourth-floor', label: 'Fourth Floor', level: 4 },
+  { key: 'fifth-floor', label: 'Fifth Floor', level: 5 }
+];
+
+const floorDefinitionForLevel = (level: number): FloorDefinition | null =>
+  FLOOR_DEFINITIONS.find((floor) => floor.level === level) ?? null;
+
+const cleanPositionSuffix = (value: string): string =>
+  value.replace(/^\s*[-–—]\s*/, '').replace(/\s*[-–—]\s*/g, '–').trim();
+
+const positionLabel = (floor: FloorDefinition, suffix: string, fallback: string): string => {
+  const cleaned = cleanPositionSuffix(suffix);
+  if (!cleaned) return `${floor.label} · ${fallback}`;
+  const prefix = cleaned.includes('–') ? 'Units' : 'Unit';
+  return `${floor.label} · ${prefix} ${cleaned}`;
+};
+
+const classifyFloorPosition = (
+  firstName: string,
+  displayName: string
+): {
+  floorKey: SteamaFloorKey;
+  floorLabel: string;
+  floorLevel: number | null;
+  positionLabel: string;
+  mappingEvidence: SteamaFloorMappingEvidence;
+} => {
+  const source = (firstName || displayName).trim().replace(/\s+/g, ' ');
+  const groundMatch = source.match(/^(?:g|grd|ground)\s*floor\b(.*)$/i);
+  if (groundMatch) {
+    const floor = FLOOR_DEFINITIONS[0];
+    return {
+      floorKey: floor.key,
+      floorLabel: floor.label,
+      floorLevel: floor.level,
+      positionLabel: positionLabel(floor, groundMatch[1], source),
+      mappingEvidence: 'structured_name'
+    };
+  }
+
+  const ordinalMatch = source.match(
+    /^(1st|first|2nd|second|3rd|third|4th|fourth|5th|fifth)\s+floor\b(.*)$/i
+  );
+  if (ordinalMatch) {
+    const ordinal = ordinalMatch[1].toLowerCase();
+    const level = ordinal === '1st' || ordinal === 'first'
+      ? 1
+      : ordinal === '2nd' || ordinal === 'second'
+        ? 2
+        : ordinal === '3rd' || ordinal === 'third'
+          ? 3
+          : ordinal === '4th' || ordinal === 'fourth'
+            ? 4
+            : 5;
+    const floor = floorDefinitionForLevel(level)!;
+    return {
+      floorKey: floor.key,
+      floorLabel: floor.label,
+      floorLevel: floor.level,
+      positionLabel: positionLabel(floor, ordinalMatch[2], source),
+      mappingEvidence: 'structured_name'
+    };
+  }
+
+  const groundCode = source.match(/^G\s*[- ]?0?(\d{1,2})$/i);
+  if (groundCode) {
+    const floor = FLOOR_DEFINITIONS[0];
+    return {
+      floorKey: floor.key,
+      floorLabel: floor.label,
+      floorLevel: floor.level,
+      positionLabel: `${floor.label} · Position ${source.toUpperCase().replace(/\s+/g, '')}`,
+      mappingEvidence: 'legacy_code'
+    };
+  }
+
+  const firstFloorCode = source.match(/^F\s*0(\d{1,2})$/i);
+  if (firstFloorCode) {
+    const floor = FLOOR_DEFINITIONS[1];
+    return {
+      floorKey: floor.key,
+      floorLabel: floor.label,
+      floorLevel: floor.level,
+      positionLabel: `${floor.label} · Position ${source.toUpperCase().replace(/\s+/g, '')}`,
+      mappingEvidence: 'legacy_code'
+    };
+  }
+
+  const floorCode = source.match(/^F\s*([1-5])(\d{1,2})$/i);
+  if (floorCode) {
+    const floor = floorDefinitionForLevel(Number(floorCode[1]))!;
+    return {
+      floorKey: floor.key,
+      floorLabel: floor.label,
+      floorLevel: floor.level,
+      positionLabel: `${floor.label} · Position ${source.toUpperCase().replace(/\s+/g, '')}`,
+      mappingEvidence: 'legacy_code'
+    };
+  }
+
+  return {
+    floorKey: 'unclassified',
+    floorLabel: 'Unclassified',
+    floorLevel: null,
+    positionLabel: source || 'Position not named',
+    mappingEvidence: 'unclassified'
+  };
+};
+
+const isEstatePlaceholder = (value: string): boolean =>
+  value.toLowerCase().replace(/[^a-z0-9]/g, '') === 'naakahub';
+
+const createFloorUsageBuckets = (
+  period: EnergyMixPeriod,
+  rangeStartMs: number,
+  rangeEndMs: number
+): SteamaFloorUsageBucket[] => {
+  const floorKeys: SteamaFloorKey[] = [
+    ...FLOOR_DEFINITIONS.map((floor) => floor.key),
+    'unclassified'
+  ];
+  return createEnergyBuckets(period, rangeStartMs, rangeEndMs).map((bucket) => ({
+    key: bucket.key,
+    label: bucket.label,
+    from: bucket.from,
+    to: bucket.to,
+    totalKwh: 0,
+    floors: floorKeys.map((floorKey) => ({ floorKey, usageKwh: 0 }))
+  }));
+};
+
 const normalizeCustomerTransaction = (record: JsonObject) => ({
   providerId: stringValue(firstValue(record, ['id', 'pk', 'provider_id'])),
   timestamp: isoDateValue(firstValue(record, ['timestamp', 'created_at', 'created'])) ?? '',
@@ -613,6 +768,7 @@ export class SteamaOperationsService {
   private cachedReadingWindow: CachedReadingWindow | null = null;
   private readonly cachedEnergyMix = new Map<string, CachedEnergyMix>();
   private readonly cachedRevenueAnalysis = new Map<string, CachedRevenueAnalysis>();
+  private readonly cachedFloorAnalysis = new Map<string, CachedFloorAnalysis>();
   private readonly retailTariffNgnPerKwh: number;
   private readonly tariffEffectiveFrom: string | null;
 
@@ -1118,6 +1274,230 @@ export class SteamaOperationsService {
     };
 
     this.cachedRevenueAnalysis.set(cacheKey, {
+      value: result,
+      expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
+    });
+    return result;
+  }
+
+  async getFloorAnalysis(
+    period: EnergyMixPeriod,
+    forceRefresh = false,
+    customRange?: EnergyMixDateRange
+  ): Promise<SteamaFloorAnalysis> {
+    const now = Date.now();
+    const cacheKey = `${period}:${customRange?.from ?? 'preset'}:${customRange?.to ?? 'preset'}`;
+    const cached = this.cachedFloorAnalysis.get(cacheKey);
+    if (!forceRefresh && cached && cached.expiresAt > now) {
+      return { ...cached.value, dataSource: { ...cached.value.dataSource, cached: true } };
+    }
+
+    const range = resolveEnergyMixRange(now, period, customRange);
+    if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) {
+      throw new Error('invalid_floor_analysis_range');
+    }
+
+    const overview = await this.getOverview(forceRefresh);
+    const metersByCustomer = new Map<string, SteamaMeterSummary[]>();
+    for (const meter of overview.meters) {
+      if (!meter.customerId) continue;
+      const customerMeters = metersByCustomer.get(meter.customerId) ?? [];
+      customerMeters.push(meter);
+      metersByCustomer.set(meter.customerId, customerMeters);
+    }
+
+    const positionInputs = overview.customers.flatMap((customer) => {
+      const customerMeters = metersByCustomer.get(customer.providerId) ?? [];
+      const sourceAccount = /^power\s*room$/i.test(customer.firstName) || customerMeters.some((meter) =>
+        ['solar_source', 'grid_source', 'generator_source'].includes(meter.operationalRole)
+      );
+      if (sourceAccount) return [];
+      return [{ customer, customerMeters, identity: classifyFloorPosition(customer.firstName, customer.displayName) }];
+    });
+
+    const meterRequests = positionInputs.flatMap(({ customer, customerMeters }) =>
+      customerMeters.map((meter) => ({ customerId: customer.providerId, meter }))
+    );
+    const historyResults = await Promise.allSettled(
+      meterRequests.map(async ({ meter }) => ({
+        meterId: meter.providerId,
+        readings: await this.getDirectiveMeterReadings(meter.providerId, range.start, range.end)
+      }))
+    );
+    const historiesByMeter = new Map<string, DirectiveReading[]>();
+    let unavailableMeterCount = 0;
+    historyResults.forEach((result, index) => {
+      const meterId = meterRequests[index]?.meter.providerId;
+      if (!meterId) return;
+      if (result.status === 'fulfilled') historiesByMeter.set(meterId, result.value.readings);
+      else unavailableMeterCount += 1;
+    });
+
+    const expectedHours = Math.max(0, Math.round((range.end - range.start) / HOUR_MS));
+    const buckets = createFloorUsageBuckets(period, range.start, range.end);
+    const bucketsByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    const positions: SteamaFloorPositionUsage[] = [];
+
+    for (const { customer, customerMeters, identity } of positionInputs) {
+      const uniqueReadings: Array<DirectiveReading & { meterId: string }> = [];
+      for (const meter of customerMeters) {
+        const meterIntervals = new Map<string, DirectiveReading>();
+        for (const reading of historiesByMeter.get(meter.providerId) ?? []) {
+          meterIntervals.set(reading.intervalStart, reading);
+        }
+        for (const reading of meterIntervals.values()) {
+          uniqueReadings.push({ ...reading, meterId: meter.providerId });
+          const intervalMs = new Date(reading.intervalStart).getTime();
+          const bucket = bucketsByKey.get(new Date(startOfEnergyBucket(intervalMs, period)).toISOString());
+          const floorValue = bucket?.floors.find((entry) => entry.floorKey === identity.floorKey);
+          if (bucket && floorValue) {
+            floorValue.usageKwh += reading.usageKwh;
+            bucket.totalKwh += reading.usageKwh;
+          }
+        }
+      }
+
+      uniqueReadings.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+      const usageKwh = roundEnergy(uniqueReadings.reduce((sum, reading) => sum + reading.usageKwh, 0));
+      const expectedIntervals = expectedHours * customerMeters.length;
+      const tenantName = customer.lastName || 'No tenant recorded';
+      positions.push({
+        customerId: customer.providerId,
+        providerPositionName: customer.firstName || customer.displayName,
+        positionLabel: identity.positionLabel,
+        tenantName,
+        occupancyStatus: !customer.lastName
+          ? 'not_recorded'
+          : isEstatePlaceholder(customer.lastName)
+            ? 'estate_placeholder'
+            : 'named_tenant',
+        floorKey: identity.floorKey,
+        floorLabel: identity.floorLabel,
+        floorLevel: identity.floorLevel,
+        mappingEvidence: identity.mappingEvidence,
+        meterIds: customerMeters.map((meter) => meter.providerId),
+        meterNumbers: customerMeters.map((meter) => meter.meterNumber).filter(Boolean),
+        meterCount: customerMeters.length,
+        onlineMeterCount: customerMeters.filter((meter) => meter.connectivity === 'online').length,
+        usageKwh,
+        estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
+        observedIntervals: uniqueReadings.length,
+        expectedIntervals,
+        coveragePercent: expectedIntervals > 0
+          ? roundPercent((uniqueReadings.length / expectedIntervals) * 100)
+          : 0,
+        firstReadingAt: uniqueReadings[0]?.timestamp ?? null,
+        latestReadingAt: uniqueReadings.at(-1)?.timestamp ?? null
+      });
+    }
+
+    for (const bucket of buckets) {
+      bucket.totalKwh = roundEnergy(bucket.totalKwh);
+      for (const floor of bucket.floors) floor.usageKwh = roundEnergy(floor.usageKwh);
+    }
+
+    positions.sort((left, right) =>
+      (left.floorLevel ?? 99) - (right.floorLevel ?? 99) || left.positionLabel.localeCompare(right.positionLabel)
+    );
+    const totalUsageKwh = roundEnergy(positions.reduce((sum, position) => sum + position.usageKwh, 0));
+    const unclassifiedUsageKwh = roundEnergy(
+      positions.filter((position) => position.floorKey === 'unclassified').reduce((sum, position) => sum + position.usageKwh, 0)
+    );
+    const createFloorSummary = (
+      key: SteamaFloorKey,
+      label: string,
+      level: number | null
+    ): SteamaFloorUsageSummary => {
+      const floorPositions = positions.filter((position) => position.floorKey === key);
+      const usageKwh = roundEnergy(floorPositions.reduce((sum, position) => sum + position.usageKwh, 0));
+      const observedIntervals = floorPositions.reduce((sum, position) => sum + position.observedIntervals, 0);
+      const expectedIntervals = floorPositions.reduce((sum, position) => sum + position.expectedIntervals, 0);
+      return {
+        key,
+        label,
+        level,
+        positionCount: floorPositions.length,
+        meteredPositionCount: floorPositions.filter((position) => position.meterCount > 0).length,
+        reportingPositionCount: floorPositions.filter((position) => position.observedIntervals > 0).length,
+        meterCount: floorPositions.reduce((sum, position) => sum + position.meterCount, 0),
+        onlineMeterCount: floorPositions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
+        usageKwh,
+        sharePercent: totalUsageKwh > 0 ? roundPercent((usageKwh / totalUsageKwh) * 100) : 0,
+        estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
+        observedIntervals,
+        expectedIntervals,
+        coveragePercent: expectedIntervals > 0 ? roundPercent((observedIntervals / expectedIntervals) * 100) : 0
+      };
+    };
+    const floors: SteamaFloorUsageSummary[] = FLOOR_DEFINITIONS.map((floor) =>
+      createFloorSummary(floor.key, floor.label, floor.level)
+    );
+    if (positions.some((position) => position.floorKey === 'unclassified')) {
+      floors.push(createFloorSummary('unclassified', 'Unclassified', null));
+    }
+
+    const observedIntervals = positions.reduce((sum, position) => sum + position.observedIntervals, 0);
+    const expectedIntervals = positions.reduce((sum, position) => sum + position.expectedIntervals, 0);
+    const warnings = [
+      'Floor consumption is calculated from interval usage on meters currently assigned to customer position accounts; cumulative register values are not summed.',
+      'The first name is treated as the permanent floor or unit position and the last name as the current tenant snapshot.',
+      'Legacy position codes are interpreted using the observed Na-Aka Hub convention: G codes are Ground Floor, F0 codes are First Floor, and F2–F5 identify Floors 2–5.',
+      'SteamaCo currently exposes a limited raw-message history, so longer periods include only the readings still available from the provider.',
+      'Estimated Naira values use the provisional MSM retail rate and are not cash collections.'
+    ];
+    if (positions.some((position) => position.floorKey === 'unclassified')) {
+      warnings.push('Some customer positions could not be classified from their current names and remain in the Unclassified group.');
+    }
+    if (unavailableMeterCount > 0) {
+      warnings.push(`${unavailableMeterCount} assigned meter reading request(s) were unavailable during this refresh.`);
+    }
+    if (positions.some((position) => position.meterCount === 0)) {
+      warnings.push('Positions without an assigned meter remain visible but contribute no energy until a provider assignment exists.');
+    }
+
+    const result: SteamaFloorAnalysis = {
+      dataSource: {
+        provider: 'SteamaCo',
+        mode: 'live_read_only',
+        retrievedAt: new Date(now).toISOString(),
+        scope: 'provider_customer_meter_directives',
+        cached: false
+      },
+      site: { name: 'Na-Aka Hub', structure: 'Ground floor plus Floors 1–5' },
+      period,
+      range: {
+        from: new Date(range.start).toISOString(),
+        to: new Date(range.end).toISOString(),
+        timezone: 'Africa/Lagos'
+      },
+      tariff: {
+        retailNgnPerKwh: this.retailTariffNgnPerKwh,
+        currency: 'NGN',
+        status: 'provisional'
+      },
+      summary: {
+        totalPositions: positions.length,
+        classifiedPositions: positions.filter((position) => position.floorKey !== 'unclassified').length,
+        unclassifiedPositions: positions.filter((position) => position.floorKey === 'unclassified').length,
+        meteredPositions: positions.filter((position) => position.meterCount > 0).length,
+        reportingPositions: positions.filter((position) => position.observedIntervals > 0).length,
+        totalMeters: positions.reduce((sum, position) => sum + position.meterCount, 0),
+        onlineMeters: positions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
+        totalUsageKwh,
+        classifiedUsageKwh: roundEnergy(totalUsageKwh - unclassifiedUsageKwh),
+        unclassifiedUsageKwh,
+        estimatedValueNgn: roundMoney(totalUsageKwh * this.retailTariffNgnPerKwh),
+        observedIntervals,
+        expectedIntervals,
+        coveragePercent: expectedIntervals > 0 ? roundPercent((observedIntervals / expectedIntervals) * 100) : 0
+      },
+      floors,
+      positions,
+      buckets,
+      warnings: Array.from(new Set(warnings))
+    };
+
+    this.cachedFloorAnalysis.set(cacheKey, {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
