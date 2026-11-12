@@ -1,3 +1,5 @@
+import type { FloorTenancyRecord, FloorTenancySource } from './floorTenancy.js';
+
 export type MeterConnectivity = 'online' | 'offline' | 'never_online' | 'unknown';
 
 export type MeterFreshnessBucket =
@@ -75,11 +77,27 @@ export type SteamaFloorKey =
 
 export type SteamaFloorMappingEvidence = 'structured_name' | 'legacy_code' | 'unclassified';
 
+export interface SteamaTenantUsageAttribution {
+  tenantName: string;
+  source: FloorTenancySource | 'unattributed';
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  usageKwh: number;
+  estimatedValueNgn: number;
+  observedIntervals: number;
+}
+
 export interface SteamaFloorPositionUsage {
   customerId: string;
   providerPositionName: string;
   positionLabel: string;
   tenantName: string;
+  providerTenantName: string;
+  tenantRecordSource: FloorTenancySource | null;
+  providerTenantDrift: boolean;
+  historyTrackedFrom: string | null;
+  tenancyHistory: FloorTenancyRecord[];
+  tenantUsage: SteamaTenantUsageAttribution[];
   occupancyStatus: 'named_tenant' | 'estate_placeholder' | 'not_recorded';
   floorKey: SteamaFloorKey;
   floorLabel: string;
@@ -90,6 +108,9 @@ export interface SteamaFloorPositionUsage {
   meterCount: number;
   onlineMeterCount: number;
   usageKwh: number;
+  attributedUsageKwh: number;
+  unattributedUsageKwh: number;
+  tenantAttributionCoveragePercent: number;
   estimatedValueNgn: number;
   observedIntervals: number;
   expectedIntervals: number;
@@ -108,6 +129,9 @@ export interface SteamaFloorUsageSummary {
   meterCount: number;
   onlineMeterCount: number;
   usageKwh: number;
+  attributedUsageKwh: number;
+  unattributedUsageKwh: number;
+  tenantAttributionCoveragePercent: number;
   sharePercent: number;
   estimatedValueNgn: number;
   observedIntervals: number;
@@ -159,6 +183,9 @@ export interface SteamaFloorAnalysis {
     totalMeters: number;
     onlineMeters: number;
     totalUsageKwh: number;
+    attributedUsageKwh: number;
+    unattributedUsageKwh: number;
+    tenantAttributionCoveragePercent: number;
     classifiedUsageKwh: number;
     unclassifiedUsageKwh: number;
     estimatedValueNgn: number;

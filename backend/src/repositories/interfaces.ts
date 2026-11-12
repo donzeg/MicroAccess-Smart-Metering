@@ -1,4 +1,9 @@
 import type { CustomerMeterLink } from '../data/customerMeterMap.js';
+import type {
+  FloorPositionObservation,
+  FloorPositionTenancyTimeline,
+  RecordFloorTenancyInput
+} from '../types/floorTenancy.js';
 import type { PurchaseAuditLog, PurchaseAuditLogQuery, PurchaseListQuery, PurchaseRecord, PurchaseState } from '../types/purchase.js';
 
 export interface PurchaseRepository {
@@ -17,4 +22,10 @@ export interface PurchaseAuditLogRepository {
   append: (entry: PurchaseAuditLog) => Promise<void>;
   listByPurchaseId: (purchaseId: string, limit: number) => Promise<PurchaseAuditLog[]>;
   list: (query: PurchaseAuditLogQuery) => Promise<PurchaseAuditLog[]>;
+}
+
+export interface FloorTenancyRepository {
+  observeProviderPosition: (observation: FloorPositionObservation) => Promise<FloorPositionTenancyTimeline>;
+  getTimeline: (providerCustomerId: string) => Promise<FloorPositionTenancyTimeline | null>;
+  recordManagementTenancy: (input: RecordFloorTenancyInput) => Promise<FloorPositionTenancyTimeline>;
 }

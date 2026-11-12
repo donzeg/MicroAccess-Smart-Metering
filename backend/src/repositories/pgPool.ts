@@ -24,6 +24,10 @@ const MIGRATIONS: MigrationDefinition[] = [
   {
     id: '0002_phase1_read_only_foundation',
     fileName: 'phase1_read_only.postgres.ddl'
+  },
+  {
+    id: '0003_floor_tenancy_history',
+    fileName: 'floor_tenancy_history.postgres.ddl'
   }
 ];
 

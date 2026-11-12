@@ -72,11 +72,59 @@ export type FloorKey =
 
 export type FloorMappingEvidence = 'structured_name' | 'legacy_code' | 'unclassified';
 
+export type FloorTenancySource = 'provider_snapshot' | 'management_record';
+
+export interface FloorTenancyRecord {
+	id: string;
+	providerCustomerId: string;
+	tenantName: string;
+	source: FloorTenancySource;
+	effectiveFrom: string;
+	effectiveTo: string | null;
+	firstObservedAt: string;
+	lastObservedAt: string;
+	evidenceReference: string;
+	createdBy: string;
+}
+
+export interface FloorPositionTenancyTimeline {
+	providerCustomerId: string;
+	siteKey: string;
+	floorKey: FloorKey;
+	floorLevel: number | null;
+	positionLabel: string;
+	providerPositionName: string;
+	mappingEvidence: FloorMappingEvidence;
+	providerTenantName: string;
+	providerTenantObservedAt: string;
+	currentTenantName: string | null;
+	currentTenantSource: FloorTenancySource | null;
+	providerDrift: boolean;
+	historyTrackedFrom: string | null;
+	tenancies: FloorTenancyRecord[];
+}
+
+export interface TenantUsageAttribution {
+	tenantName: string;
+	source: FloorTenancySource | 'unattributed';
+	effectiveFrom: string | null;
+	effectiveTo: string | null;
+	usageKwh: number;
+	estimatedValueNgn: number;
+	observedIntervals: number;
+}
+
 export interface FloorPositionUsage {
 	customerId: string;
 	providerPositionName: string;
 	positionLabel: string;
 	tenantName: string;
+	providerTenantName: string;
+	tenantRecordSource: FloorTenancySource | null;
+	providerTenantDrift: boolean;
+	historyTrackedFrom: string | null;
+	tenancyHistory: FloorTenancyRecord[];
+	tenantUsage: TenantUsageAttribution[];
 	occupancyStatus: 'named_tenant' | 'estate_placeholder' | 'not_recorded';
 	floorKey: FloorKey;
 	floorLabel: string;
@@ -87,6 +135,9 @@ export interface FloorPositionUsage {
 	meterCount: number;
 	onlineMeterCount: number;
 	usageKwh: number;
+	attributedUsageKwh: number;
+	unattributedUsageKwh: number;
+	tenantAttributionCoveragePercent: number;
 	estimatedValueNgn: number;
 	observedIntervals: number;
 	expectedIntervals: number;
@@ -105,6 +156,9 @@ export interface FloorUsageSummary {
 	meterCount: number;
 	onlineMeterCount: number;
 	usageKwh: number;
+	attributedUsageKwh: number;
+	unattributedUsageKwh: number;
+	tenantAttributionCoveragePercent: number;
 	sharePercent: number;
 	estimatedValueNgn: number;
 	observedIntervals: number;
@@ -142,6 +196,9 @@ export interface FloorAnalysis {
 		totalMeters: number;
 		onlineMeters: number;
 		totalUsageKwh: number;
+		attributedUsageKwh: number;
+		unattributedUsageKwh: number;
+		tenantAttributionCoveragePercent: number;
 		classifiedUsageKwh: number;
 		unclassifiedUsageKwh: number;
 		estimatedValueNgn: number;

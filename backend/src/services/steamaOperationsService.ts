@@ -1,4 +1,10 @@
 import type { SteamaReadOnlyRequest } from './steamaReadOnlyClient.js';
+import { InMemoryFloorTenancyRepository } from '../repositories/inMemoryFloorTenancyRepository.js';
+import type { FloorTenancyRepository } from '../repositories/interfaces.js';
+import type {
+  FloorPositionTenancyTimeline,
+  RecordFloorTenancyInput
+} from '../types/floorTenancy.js';
 import type {
   CountSeriesItem,
   EnergyMixPeriod,
@@ -63,6 +69,7 @@ interface CachedFloorAnalysis {
 export interface SteamaOperationsOptions {
   retailTariffNgnPerKwh?: number;
   tariffEffectiveFrom?: string | null;
+  floorTenancyRepository?: FloorTenancyRepository;
 }
 
 interface DirectiveReading {
@@ -771,6 +778,7 @@ export class SteamaOperationsService {
   private readonly cachedFloorAnalysis = new Map<string, CachedFloorAnalysis>();
   private readonly retailTariffNgnPerKwh: number;
   private readonly tariffEffectiveFrom: string | null;
+  private readonly floorTenancyRepository: FloorTenancyRepository;
 
   constructor(
     private readonly client: SteamaReadOnlyRequester,
@@ -779,6 +787,17 @@ export class SteamaOperationsService {
   ) {
     this.retailTariffNgnPerKwh = options.retailTariffNgnPerKwh ?? 203;
     this.tariffEffectiveFrom = options.tariffEffectiveFrom ?? null;
+    this.floorTenancyRepository = options.floorTenancyRepository ?? new InMemoryFloorTenancyRepository();
+  }
+
+  getFloorTenancyTimeline(providerCustomerId: string): Promise<FloorPositionTenancyTimeline | null> {
+    return this.floorTenancyRepository.getTimeline(providerCustomerId);
+  }
+
+  async recordFloorTenancy(input: RecordFloorTenancyInput): Promise<FloorPositionTenancyTimeline> {
+    const timeline = await this.floorTenancyRepository.recordManagementTenancy(input);
+    this.cachedFloorAnalysis.clear();
+    return timeline;
   }
 
   async getOverview(forceRefresh = false): Promise<SteamaOperationsOverview> {
@@ -1315,6 +1334,26 @@ export class SteamaOperationsService {
       return [{ customer, customerMeters, identity: classifyFloorPosition(customer.firstName, customer.displayName) }];
     });
 
+    const observedAt = new Date(now).toISOString();
+    const tenancyTimelines = await Promise.all(
+      positionInputs.map(({ customer, identity }) =>
+        this.floorTenancyRepository.observeProviderPosition({
+          providerCustomerId: customer.providerId,
+          siteKey: 'na-aka-hub',
+          floorKey: identity.floorKey,
+          floorLevel: identity.floorLevel,
+          positionLabel: identity.positionLabel,
+          providerPositionName: customer.firstName || customer.displayName,
+          mappingEvidence: identity.mappingEvidence,
+          providerTenantName: customer.lastName,
+          observedAt
+        })
+      )
+    );
+    const tenancyTimelineByCustomer = new Map(
+      tenancyTimelines.map((timeline) => [timeline.providerCustomerId, timeline])
+    );
+
     const meterRequests = positionInputs.flatMap(({ customer, customerMeters }) =>
       customerMeters.map((meter) => ({ customerId: customer.providerId, meter }))
     );
@@ -1360,15 +1399,67 @@ export class SteamaOperationsService {
       uniqueReadings.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
       const usageKwh = roundEnergy(uniqueReadings.reduce((sum, reading) => sum + reading.usageKwh, 0));
       const expectedIntervals = expectedHours * customerMeters.length;
-      const tenantName = customer.lastName || 'No tenant recorded';
+      const tenancyTimeline = tenancyTimelineByCustomer.get(customer.providerId);
+      const attributionByKey = new Map<string, {
+        tenantName: string;
+        source: 'provider_snapshot' | 'management_record' | 'unattributed';
+        effectiveFrom: string | null;
+        effectiveTo: string | null;
+        usageKwh: number;
+        observedIntervals: number;
+      }>();
+      for (const reading of uniqueReadings) {
+        const intervalMs = new Date(reading.intervalStart).getTime();
+        const tenancy = tenancyTimeline?.tenancies.find((entry) => {
+          const fromMs = new Date(entry.effectiveFrom).getTime();
+          const toMs = entry.effectiveTo ? new Date(entry.effectiveTo).getTime() : Number.POSITIVE_INFINITY;
+          return intervalMs >= fromMs && intervalMs < toMs;
+        });
+        const key = tenancy?.id ?? 'unattributed';
+        const item = attributionByKey.get(key) ?? {
+          tenantName: tenancy?.tenantName ?? 'Historical tenant not recorded',
+          source: tenancy?.source ?? 'unattributed',
+          effectiveFrom: tenancy?.effectiveFrom ?? null,
+          effectiveTo: tenancy?.effectiveTo ?? null,
+          usageKwh: 0,
+          observedIntervals: 0
+        };
+        item.usageKwh += reading.usageKwh;
+        item.observedIntervals += 1;
+        attributionByKey.set(key, item);
+      }
+      const tenantUsage = Array.from(attributionByKey.values()).map((item) => ({
+        ...item,
+        usageKwh: roundEnergy(item.usageKwh),
+        estimatedValueNgn: roundMoney(item.usageKwh * this.retailTariffNgnPerKwh)
+      }));
+      const attributedUsageKwh = roundEnergy(
+        tenantUsage.filter((item) => item.source !== 'unattributed').reduce((sum, item) => sum + item.usageKwh, 0)
+      );
+      const unattributedUsageKwh = roundEnergy(Math.max(0, usageKwh - attributedUsageKwh));
+      const attributedIntervals = tenantUsage
+        .filter((item) => item.source !== 'unattributed')
+        .reduce((sum, item) => sum + item.observedIntervals, 0);
+      const tenantName = tenancyTimeline?.currentTenantName || customer.lastName || 'No tenant recorded';
       positions.push({
         customerId: customer.providerId,
         providerPositionName: customer.firstName || customer.displayName,
         positionLabel: identity.positionLabel,
         tenantName,
-        occupancyStatus: !customer.lastName
+        providerTenantName: customer.lastName,
+        tenantRecordSource: tenancyTimeline?.currentTenantSource ?? null,
+        providerTenantDrift: tenancyTimeline?.providerDrift ?? false,
+        historyTrackedFrom: tenancyTimeline?.historyTrackedFrom ?? null,
+        tenancyHistory: tenancyTimeline?.tenancies ?? [],
+        tenantUsage,
+        attributedUsageKwh,
+        unattributedUsageKwh,
+        tenantAttributionCoveragePercent: uniqueReadings.length > 0
+          ? roundPercent((attributedIntervals / uniqueReadings.length) * 100)
+          : 0,
+        occupancyStatus: tenantName === 'No tenant recorded'
           ? 'not_recorded'
-          : isEstatePlaceholder(customer.lastName)
+          : isEstatePlaceholder(tenantName)
             ? 'estate_placeholder'
             : 'named_tenant',
         floorKey: identity.floorKey,
@@ -1410,6 +1501,10 @@ export class SteamaOperationsService {
     ): SteamaFloorUsageSummary => {
       const floorPositions = positions.filter((position) => position.floorKey === key);
       const usageKwh = roundEnergy(floorPositions.reduce((sum, position) => sum + position.usageKwh, 0));
+      const attributedUsageKwh = roundEnergy(
+        floorPositions.reduce((sum, position) => sum + position.attributedUsageKwh, 0)
+      );
+      const unattributedUsageKwh = roundEnergy(Math.max(0, usageKwh - attributedUsageKwh));
       const observedIntervals = floorPositions.reduce((sum, position) => sum + position.observedIntervals, 0);
       const expectedIntervals = floorPositions.reduce((sum, position) => sum + position.expectedIntervals, 0);
       return {
@@ -1422,6 +1517,11 @@ export class SteamaOperationsService {
         meterCount: floorPositions.reduce((sum, position) => sum + position.meterCount, 0),
         onlineMeterCount: floorPositions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
         usageKwh,
+        attributedUsageKwh,
+        unattributedUsageKwh,
+        tenantAttributionCoveragePercent: usageKwh > 0
+          ? roundPercent((attributedUsageKwh / usageKwh) * 100)
+          : 0,
         sharePercent: totalUsageKwh > 0 ? roundPercent((usageKwh / totalUsageKwh) * 100) : 0,
         estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
         observedIntervals,
@@ -1438,9 +1538,12 @@ export class SteamaOperationsService {
 
     const observedIntervals = positions.reduce((sum, position) => sum + position.observedIntervals, 0);
     const expectedIntervals = positions.reduce((sum, position) => sum + position.expectedIntervals, 0);
+    const attributedUsageKwh = roundEnergy(positions.reduce((sum, position) => sum + position.attributedUsageKwh, 0));
+    const unattributedUsageKwh = roundEnergy(Math.max(0, totalUsageKwh - attributedUsageKwh));
     const warnings = [
       'Floor consumption is calculated from interval usage on meters currently assigned to customer position accounts; cumulative register values are not summed.',
       'The first name is treated as the permanent floor or unit position and the last name as the current tenant snapshot.',
+      'Tenant history begins when MSM first observes a position or when management records an earlier effective date; earlier usage remains explicitly unattributed.',
       'Legacy position codes are interpreted using the observed Na-Aka Hub convention: G codes are Ground Floor, F0 codes are First Floor, and F2–F5 identify Floors 2–5.',
       'SteamaCo currently exposes a limited raw-message history, so longer periods include only the readings still available from the provider.',
       'Estimated Naira values use the provisional MSM retail rate and are not cash collections.'
@@ -1453,6 +1556,9 @@ export class SteamaOperationsService {
     }
     if (positions.some((position) => position.meterCount === 0)) {
       warnings.push('Positions without an assigned meter remain visible but contribute no energy until a provider assignment exists.');
+    }
+    if (positions.some((position) => position.providerTenantDrift)) {
+      warnings.push('A SteamaCo tenant-name change differs from an approved MSM tenancy record and requires management review.');
     }
 
     const result: SteamaFloorAnalysis = {
@@ -1484,6 +1590,11 @@ export class SteamaOperationsService {
         totalMeters: positions.reduce((sum, position) => sum + position.meterCount, 0),
         onlineMeters: positions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
         totalUsageKwh,
+        attributedUsageKwh,
+        unattributedUsageKwh,
+        tenantAttributionCoveragePercent: totalUsageKwh > 0
+          ? roundPercent((attributedUsageKwh / totalUsageKwh) * 100)
+          : 0,
         classifiedUsageKwh: roundEnergy(totalUsageKwh - unclassifiedUsageKwh),
         unclassifiedUsageKwh,
         estimatedValueNgn: roundMoney(totalUsageKwh * this.retailTariffNgnPerKwh),

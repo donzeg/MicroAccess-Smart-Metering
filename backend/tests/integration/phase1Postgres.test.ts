@@ -56,11 +56,14 @@ describeWhenPostgres('Phase 1 PostgreSQL startup', () => {
     }
   });
 
-  it('applies only the Phase 1 foundation migration', async () => {
+  it('applies the Phase 1 foundation and floor tenancy history migrations', async () => {
     const pool = new Pool({ connectionString: postgresUrl });
     try {
       const result = await pool.query<{ id: string }>('SELECT id FROM schema_migrations ORDER BY id');
-      expect(result.rows.map((row) => row.id)).toEqual(['0002_phase1_read_only_foundation']);
+      expect(result.rows.map((row) => row.id)).toEqual([
+        '0002_phase1_read_only_foundation',
+        '0003_floor_tenancy_history'
+      ]);
     } finally {
       await pool.end();
     }

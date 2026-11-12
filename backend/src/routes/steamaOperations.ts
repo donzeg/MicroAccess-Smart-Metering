@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 
 import { SteamaReadOnlyError } from '../services/steamaReadOnlyClient.js';
+import { FloorPositionNotFoundError, FloorTenancyConflictError } from '../types/floorTenancy.js';
 
 const overviewQuerySchema = z.object({
   refresh: z.enum(['true', 'false']).optional().default('false')
@@ -22,6 +23,20 @@ const energyMixQuerySchema = z.object({
   refresh: z.enum(['true', 'false']).optional().default('false'),
   from: dateOnlySchema.optional(),
   to: dateOnlySchema.optional()
+});
+
+const tenancyParamsSchema = z.object({
+  providerCustomerId: z.string().regex(/^\d+$/).max(32)
+});
+
+const tenancyBodySchema = z.object({
+  providerCustomerId: z.string().regex(/^\d+$/).max(32),
+  tenantName: z.string().trim().min(1).max(160),
+  effectiveFrom: z.string().refine((value) => {
+    const timestamp = new Date(value).getTime();
+    return !Number.isNaN(timestamp) && timestamp <= Date.now();
+  }),
+  evidenceReference: z.string().trim().min(1).max(240).default('management_confirmed')
 });
 
 const validDateOnly = (value: string): boolean => {
@@ -195,6 +210,56 @@ export const registerSteamaOperationsRoutes = async (app: FastifyInstance): Prom
           'Steama floor analysis failed'
         );
         return sendProviderError(error, reply);
+      }
+    }
+  );
+
+  app.get(
+    '/api/v1/ops/floor-tenancies/:providerCustomerId',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
+    async (request, reply) => {
+      if (!app.steamaOperationsService) {
+        return reply.code(503).send({ code: 'provider_not_configured', message: 'Floor operations are not configured.' });
+      }
+      const parsed = tenancyParamsSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: 'invalid_position_id', message: 'Invalid floor position identifier.' });
+      }
+      const timeline = await app.steamaOperationsService.getFloorTenancyTimeline(parsed.data.providerCustomerId);
+      if (!timeline) {
+        return reply.code(404).send({ code: 'floor_position_not_found', message: 'The floor position has not been observed yet.' });
+      }
+      return timeline;
+    }
+  );
+
+  app.post(
+    '/api/v1/ops/floor-tenancies',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('management_ops')] },
+    async (request, reply) => {
+      if (!app.steamaOperationsService) {
+        return reply.code(503).send({ code: 'provider_not_configured', message: 'Floor operations are not configured.' });
+      }
+      const parsed = tenancyBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: 'invalid_tenancy', message: 'The tenant name and effective date are required.' });
+      }
+      try {
+        const timeline = await app.steamaOperationsService.recordFloorTenancy({
+          ...parsed.data,
+          effectiveFrom: new Date(parsed.data.effectiveFrom).toISOString(),
+          actorReference: request.user?.sub ?? 'unknown-management-user'
+        });
+        return reply.code(201).send(timeline);
+      } catch (error) {
+        if (error instanceof FloorPositionNotFoundError) {
+          return reply.code(404).send({ code: 'floor_position_not_found', message: 'Refresh floor operations before recording this tenant.' });
+        }
+        if (error instanceof FloorTenancyConflictError) {
+          return reply.code(409).send({ code: 'tenancy_date_conflict', message: 'A tenant record already starts at that exact date and time.' });
+        }
+        request.log.error({ errorCode: 'floor_tenancy_record_failed' }, 'Floor tenancy record failed');
+        return reply.code(500).send({ code: 'floor_tenancy_record_failed', message: 'The tenant record could not be saved.' });
       }
     }
   );

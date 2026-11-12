@@ -1,6 +1,6 @@
-import { error, redirect } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
-import { loadFloorAnalysis } from '#lib/server/msmApi.js';
+import { error, fail, redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { loadFloorAnalysis, recordFloorTenancy } from '#lib/server/msmApi.js';
 import type { EnergyMixPeriod, FloorKey } from '#lib/types.js';
 
 const PERIODS: EnergyMixPeriod[] = ['hourly', 'daily', 'weekly', 'monthly'];
@@ -13,6 +13,15 @@ const lagosToday = (): string => {
 	}).formatToParts(new Date());
 	const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
 	return `${value.year}-${value.month}-${value.day}`;
+};
+
+const lagosLocalDateTime = (): string => {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Africa/Lagos', year: 'numeric', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+	}).formatToParts(new Date());
+	const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+	return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;
 };
 
 export const load: PageServerLoad = async ({ cookies, fetch, params, url }) => {
@@ -47,6 +56,37 @@ export const load: PageServerLoad = async ({ cookies, fetch, params, url }) => {
 		period,
 		customRange: customRange ?? null,
 		today: lagosToday(),
+		nowLocal: lagosLocalDateTime(),
 		error: result.error
 	};
+};
+
+export const actions: Actions = {
+	recordTenancy: async ({ cookies, fetch, request }) => {
+		const token = cookies.get('msm_session');
+		if (!token) redirect(303, '/login');
+		const values = await request.formData();
+		const providerCustomerId = String(values.get('providerCustomerId') ?? '').trim();
+		const tenantName = String(values.get('tenantName') ?? '').trim();
+		const effectiveLocal = String(values.get('effectiveFrom') ?? '').trim();
+		const evidenceReference = String(values.get('evidenceReference') ?? '').trim() || 'management_confirmed';
+		const effectiveDate = new Date(`${effectiveLocal}:00+01:00`);
+		if (!/^\d+$/.test(providerCustomerId) || !tenantName || Number.isNaN(effectiveDate.getTime()) || effectiveDate.getTime() > Date.now()) {
+			return fail(400, { success: false, message: 'Enter a tenant name and a valid effective date that is not in the future.', providerCustomerId });
+		}
+		const result = await recordFloorTenancy(fetch, token, {
+			providerCustomerId,
+			tenantName,
+			effectiveFrom: effectiveDate.toISOString(),
+			evidenceReference
+		});
+		if (result.status === 401) {
+			cookies.delete('msm_session', { path: '/' });
+			redirect(303, '/login');
+		}
+		if (!result.ok) {
+			return fail(result.status, { success: false, message: result.error?.message ?? 'The tenant record could not be saved.', providerCustomerId });
+		}
+		return { success: true, message: `Tenant history saved for ${result.data?.positionLabel ?? 'the position'}.`, providerCustomerId };
+	}
 };

@@ -4,6 +4,7 @@ import type {
 	EnergyMix,
 	EnergyMixPeriod,
 	FloorAnalysis,
+	FloorPositionTenancyTimeline,
 	MeterHistory,
 	MeterSummary,
 	OperationsOverview,
@@ -215,4 +216,34 @@ export const loadFloorAnalysis = (
 		`/api/v1/ops/steama/floors?${query.toString()}`,
 		'The floor-by-floor analysis could not be loaded.'
 	);
+};
+
+export const recordFloorTenancy = async (
+	fetcher: typeof fetch,
+	token: string,
+	input: { providerCustomerId: string; tenantName: string; effectiveFrom: string; evidenceReference: string }
+): Promise<ApiResult<FloorPositionTenancyTimeline>> => {
+	let response: Response;
+	try {
+		response = await fetcher(`${apiBaseUrl()}/api/v1/ops/floor-tenancies`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+			body: JSON.stringify(input)
+		});
+	} catch {
+		return { ok: false, status: 503, data: null, error: { code: 'backend_unavailable', message: 'The MSM service is not available yet.' } };
+	}
+	const payload = await safeJson(response);
+	if (!response.ok) {
+		return {
+			ok: false,
+			status: response.status,
+			data: null,
+			error: {
+				code: typeof payload.code === 'string' ? payload.code : 'tenancy_save_failed',
+				message: typeof payload.message === 'string' ? payload.message : 'The tenant history record could not be saved.'
+			}
+		};
+	}
+	return { ok: true, status: response.status, data: payload as unknown as FloorPositionTenancyTimeline, error: null };
 };

@@ -17,7 +17,10 @@ meter estate. Its first production slice provides:
   matched source energy without misrepresenting balance credits as cash.
 - a floor operations overview and dedicated floor drill-down pages that keep
   permanent positions separate from current tenant names, assigned meters,
-  interval usage, provisional value and transparent data coverage.
+  interval usage, provisional value and transparent data coverage;
+- a local tenancy register on each floor page for recording the actual tenant
+  and effective start date, viewing prior occupants and exposing unattributed
+  usage or provider-name drift instead of rewriting historical attribution.
 
 No demonstration or fabricated meter records are used. When SteamaCo is not
 configured or unavailable, the application shows an explicit connection state.

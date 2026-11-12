@@ -59,6 +59,10 @@ The management web application uses these server-side endpoints:
   consumption analysis for Na-Aka Hub. It supports presets or exact dates,
   excludes source accounts and preserves unclassified names rather than
   guessing their location;
+- `GET /api/v1/ops/floor-tenancies/:providerCustomerId` — local tenancy history
+  for a permanent premises position;
+- `POST /api/v1/ops/floor-tenancies` — records a management-confirmed tenant and
+  effective start date in MSM only. It never changes the SteamaCo customer;
 - `GET /api/v1/ops/runtime-capabilities` — safe runtime feature status.
 
 All endpoints require a management JWT. They return normalized operational
@@ -103,6 +107,9 @@ password or unrestricted raw provider payloads.
 - `in_memory` is accepted only for isolated automated-test behavior.
 - `backend/db/phase1_read_only.postgres.ddl` is migration
   `0002_phase1_read_only_foundation`.
+- `backend/db/floor_tenancy_history.postgres.ddl` is migration
+  `0003_floor_tenancy_history`; it stores permanent positions and non-overlapping
+  tenant effective periods used for historical usage attribution.
 - The inherited prototype schema is applied only in legacy prototype mode.
 - Applied migrations are checksum-verified before the service begins work.
 

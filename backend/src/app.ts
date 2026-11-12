@@ -7,9 +7,11 @@ import { authPlugin } from './plugins/auth.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { InMemoryPurchaseAuditLogRepository } from './repositories/inMemoryPurchaseAuditLogRepository.js';
 import { InMemoryCustomerMeterRepository } from './repositories/inMemoryCustomerMeterRepository.js';
+import { InMemoryFloorTenancyRepository } from './repositories/inMemoryFloorTenancyRepository.js';
 import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepository.js';
 import type { CustomerMeterRepository, PurchaseAuditLogRepository, PurchaseRepository } from './repositories/interfaces.js';
 import { PgCustomerMeterRepository } from './repositories/pgCustomerMeterRepository.js';
+import { PgFloorTenancyRepository } from './repositories/pgFloorTenancyRepository.js';
 import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogRepository.js';
 import { createPgPool, runPgMigrations } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
@@ -72,7 +74,10 @@ export const buildApp = (): FastifyInstance => {
         60_000,
         {
           retailTariffNgnPerKwh: env.retailTariffNgnPerKwh,
-          tariffEffectiveFrom: env.retailTariffEffectiveFrom
+          tariffEffectiveFrom: env.retailTariffEffectiveFrom,
+          floorTenancyRepository: pool
+            ? new PgFloorTenancyRepository(pool)
+            : new InMemoryFloorTenancyRepository()
         }
       )
     : null;
