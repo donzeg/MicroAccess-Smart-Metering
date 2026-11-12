@@ -1,0 +1,77 @@
+<script lang="ts">
+	import { ChevronRight, ListFilter, Search } from '@lucide/svelte';
+	import AppShell from '#lib/components/AppShell.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import StatusPill from '#lib/components/StatusPill.svelte';
+	import { formatDateTime, formatNumber } from '#lib/format.js';
+	import type { MeterConnectivity, MeterOperationalRole } from '#lib/types.js';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
+	let search = $state('');
+	let connectivity = $state<'all' | MeterConnectivity>('all');
+	let role = $state<'all' | MeterOperationalRole>('all');
+	let meters = $derived(data.overview?.meters ?? []);
+	let filtered = $derived(meters.filter((meter) => {
+		const term = search.trim().toLowerCase();
+		const searchable = [meter.meterNumber, meter.name, meter.model, meter.customerName ?? '', meter.siteName].join(' ').toLowerCase();
+		return (!term || searchable.includes(term)) && (connectivity === 'all' || meter.connectivity === connectivity) && (role === 'all' || meter.operationalRole === role);
+	}));
+	const labels: Record<MeterOperationalRole, string> = { grid_source: 'Grid source', solar_source: 'Solar source', generator_source: 'Generator source', distribution_or_bulk: 'Distribution / bulk', customer_load: 'Customer load', unknown: 'Unclassified' };
+	const tone = (value: MeterConnectivity): 'success' | 'danger' | 'warning' | 'neutral' => value === 'online' ? 'success' : value === 'never_online' ? 'danger' : value === 'offline' ? 'warning' : 'neutral';
+</script>
+
+<svelte:head><title>Meter operations | MicroAccess Smart Metering</title></svelte:head>
+<AppShell active="meters">
+	<PageHeader eyebrow="Asset operations" title="Meter register" description="Search the full estate, open any meter and review its live state and dated reading history." refreshHref="/meters?refresh=true" />
+	{#if data.error}
+		<section class="state">{data.error.message}</section>
+	{:else}
+		<section class="panel">
+			<div class="panel-heading"><div><p>Live estate</p><h2>All meters</h2></div><span>{filtered.length} of {meters.length}</span></div>
+			<div class="filters">
+				<label class="search"><Search size={16} /><input bind:value={search} placeholder="Search meter, model or customer" aria-label="Search meters" /></label>
+				<label><ListFilter size={15} /><select bind:value={connectivity} aria-label="Connectivity filter"><option value="all">All connectivity</option><option value="online">Online</option><option value="offline">Offline</option><option value="never_online">Never online</option><option value="unknown">Unknown</option></select></label>
+				<label><select bind:value={role} aria-label="Role filter"><option value="all">All roles</option><option value="grid_source">Grid source</option><option value="solar_source">Solar source</option><option value="distribution_or_bulk">Distribution / bulk</option><option value="customer_load">Customer load</option><option value="unknown">Unclassified</option></select></label>
+			</div>
+			<div class="table-wrap"><table>
+				<thead><tr><th>Meter</th><th>Operational role</th><th>Customer</th><th>Connectivity</th><th>Last seen</th><th>Latest register</th><th></th></tr></thead>
+				<tbody>{#each filtered as meter (meter.providerId)}
+					<tr>
+						<td><a href={`/meters/${meter.providerId}`}><strong>{meter.meterNumber}</strong><span>{meter.name} · {meter.model}</span></a></td>
+						<td>{labels[meter.operationalRole]}</td><td>{meter.customerName ?? 'Unassigned'}</td>
+						<td><StatusPill label={meter.connectivityLabel} tone={tone(meter.connectivity)} /></td>
+						<td>{formatDateTime(meter.lastReadingAt)}</td><td>{formatNumber(meter.latestReadingKwh)} <small>kWh</small></td>
+						<td><a class="open" href={`/meters/${meter.providerId}`} aria-label={`Open meter ${meter.meterNumber}`}><ChevronRight size={17} /></a></td>
+					</tr>
+				{:else}<tr><td colspan="7" class="empty">No meter matches the selected filters.</td></tr>{/each}</tbody>
+			</table></div>
+		</section>
+	{/if}
+</AppShell>
+
+<style>
+	.panel, .state { padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
+	.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem; }
+	.panel-heading p { margin: 0 0 .3rem; color: var(--steel); font-size: .62rem; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+	.panel-heading h2 { margin: 0; color: var(--navy); font-size: 1.08rem; }
+	.panel-heading > span { padding: .3rem .58rem; border-radius: 999px; background: var(--pale-blue); color: var(--blue); font-size: .66rem; font-weight: 800; }
+	.filters { display: grid; grid-template-columns: minmax(15rem, 1fr) auto auto; gap: .6rem; margin-bottom: 1rem; }
+	.filters label { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem; border: 1px solid var(--line); border-radius: .7rem; color: var(--text-muted); }
+	.filters input, .filters select { min-width: 0; padding: .68rem 0; border: 0; background: transparent; color: var(--text); outline: none; }
+	.search input { width: 100%; }
+	.table-wrap { overflow: auto; border: 1px solid var(--line-soft); border-radius: .8rem; }
+	table { width: 100%; border-collapse: collapse; font-size: .69rem; }
+	th { padding: .72rem; background: var(--surface-soft); color: var(--text-muted); font-size: .6rem; letter-spacing: .04em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+	td { padding: .78rem .72rem; border-top: 1px solid var(--line-soft); color: var(--text); white-space: nowrap; }
+	td:first-child { min-width: 13rem; }
+	td a { color: inherit; text-decoration: none; }
+	td strong, td span { display: block; }
+	td strong { color: var(--navy); font-size: .73rem; }
+	td span, td small { margin-top: .18rem; color: var(--text-muted); font-size: .59rem; }
+	tr:hover td { background: var(--surface-soft); }
+	.open { color: var(--blue); }
+	.empty { padding: 2rem; text-align: center; color: var(--text-muted); }
+	.state { color: var(--danger); }
+	@media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
+</style>

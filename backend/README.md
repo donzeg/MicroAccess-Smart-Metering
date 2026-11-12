@@ -1,12 +1,65 @@
 # MSM Backend
 
+> [!CAUTION]
+> This backend is a prototype. Its current SteamaCo credit request sends fields
+> that do not match the authenticated live transaction schema and omits the
+> required transaction category. Do not enable it for real customer credit.
+> See the
+> [verified API contract](../docs/vendor/steama/API_CONTRACT.md) and
+> [billing/payment design](../docs/product/BILLING_AND_PAYMENTS.md).
+
 Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 
-## Included in this first build slice
-- JWT login endpoint (`POST /api/v1/auth/login`)
-- Protected customer-meter mapping endpoint (`GET /api/v1/customers/:customerId/meters`)
-- Purchase lifecycle endpoints with idempotent provider credit support
-- Unit and integration tests (Vitest)
+## Current operating posture
+
+The default operating mode is `phase1_read_only`. In this mode:
+
+- PostgreSQL is required outside automated tests;
+- unsafe or placeholder production configuration fails startup validation;
+- legacy purchase, provider-credit, callback, reconciliation, manual-reading
+  and simulated-data routes are not registered;
+- customer self-service is disabled;
+- provider directives are disabled;
+- the SteamaCo read-only client exposes only `GET`, `HEAD` and `OPTIONS` after
+  its internal token authentication request.
+
+`legacy_prototype` exists only to preserve and test inherited behavior. The
+runtime rejects that mode in production. It is not an approved deployment
+configuration.
+
+## Included in the Phase 1 foundation slice
+
+- fail-closed runtime configuration checks;
+- PostgreSQL migration for tenant/site, integration evidence, provider
+  mappings, service accounts, meters, effective assignments, topology,
+  readiness exceptions, audit and outbox records;
+- a strictly read-only SteamaCo client with rate limiting, token refresh,
+  timeout handling and sanitized errors;
+- runtime capability reporting;
+- live, read-only SteamaCo operations overview with normalized meter/customer
+  records, freshness, assignment coverage, topology classification and
+  exception counts;
+- automated safety tests proving that legacy mutation routes are absent from
+  Phase 1 mode.
+
+## Phase 1 operations endpoints
+
+The management web application uses these server-side endpoints:
+
+- `GET /api/v1/ops/steama/overview` — normalized live operations dataset;
+- `GET /api/v1/ops/steama/overview?refresh=true` — bypass the short provider
+  protection cache;
+- `GET /api/v1/ops/steama/meters/:providerId` — normalized live meter detail;
+- `GET /api/v1/ops/steama/energy-mix` — matched solar, grid and configured
+  generator contribution for preset or exact date windows;
+- `GET /api/v1/ops/steama/revenue-costs` — read-only customer usage-charge,
+  source-attribution and retail energy-value analysis. It deliberately keeps
+  usage charges, cash collections and AEDC settlement separate;
+- `GET /api/v1/ops/runtime-capabilities` — safe runtime feature status.
+
+All endpoints require a management JWT. They return normalized operational
+fields only and do not return the provider token, service username, service
+password or unrestricted raw provider payloads.
 
 ## Role-based access control
 - Login supports `management` and `customer` roles via `POST /api/v1/auth/login`.
@@ -31,16 +84,23 @@ Fastify + TypeScript backend foundation for MicroAccess Smart Metering.
 - Config keys: `AUTH_LOGIN_LIMIT_PER_MINUTE`, `PURCHASE_INITIATE_LIMIT_PER_MINUTE`, `CALLBACK_LIMIT_PER_MINUTE`, `MANAGEMENT_OPS_LIMIT_PER_MINUTE`, `READS_LIMIT_PER_MINUTE`, `PROVIDER_RATE_LIMIT_RPS`.
 
 ## Provider integration modes
-- Default mode: local idempotent provider simulation for development and tests.
-- Live mode: set `STEAMA_ENABLED=true` and provide service credentials in `.env`.
-- In live mode, backend posts customer top-up to `POST /customers/{id}/transactions/` through Steama token auth from `/get-token/`.
-- Web/mobile clients never call Steama directly.
+
+- Phase 1: set `STEAMA_ENABLED=true` and provide a rotated service credential
+  through the approved secret process. Only the read-only client is approved.
+- Legacy automated tests: a local provider simulation remains available under
+  `MSM_OPERATION_MODE=legacy_prototype` when `NODE_ENV=test`.
+- The inherited live credit client remains in the source for review history,
+  but production configuration cannot expose it.
+- Web/mobile clients never call SteamaCo directly.
 
 ## Storage modes
-- Default mode: `STORAGE_MODE=in_memory` for development and tests.
-- Persistent mode: `STORAGE_MODE=postgres` with `DATABASE_URL` configured.
-- PostgreSQL schema file: `backend/db/schema.postgres.ddl`.
-- On startup in postgres mode, backend applies tracked schema migration `0001_schema_postgres_ddl` and verifies checksum drift before serving traffic.
+
+- Phase 1 requires `STORAGE_MODE=postgres` with `DATABASE_URL` outside tests.
+- `in_memory` is accepted only for isolated automated-test behavior.
+- `backend/db/phase1_read_only.postgres.ddl` is migration
+  `0002_phase1_read_only_foundation`.
+- The inherited prototype schema is applied only in legacy prototype mode.
+- Applied migrations are checksum-verified before the service begins work.
 
 ## Pending credit retry worker
 - A background worker retries purchases in `payment_confirmed_credit_pending`.
@@ -77,11 +137,41 @@ Management meter analytics endpoints:
 - `GET /api/v1/ops/meters/analytics/top-consumers`
 
 ## Local run
-1. Copy `.env.example` to `.env`
-2. Install dependencies: `npm install`
-3. Run dev server: `npm run dev`
-4. Run checks: `npm run lint && npm run typecheck && npm test`
-5. Run postgres parity integration test (when postgres is available): `TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/msm_test npm test -- --run tests/integration/postgresParity.test.ts`
+
+1. Copy `.env.example` to `.env`.
+2. Configure the MSM staff login and generated application secrets:
+   `./scripts/configure-app-access.sh`.
+3. Replace the remaining placeholders and point `DATABASE_URL` to a dedicated MSM
+   development database.
+4. Keep `MSM_OPERATION_MODE=phase1_read_only`.
+5. Install dependencies: `npm install`.
+6. Run the service: `npm run dev`.
+7. Run checks: `npm run lint && npm run typecheck && npm run build && npm test`.
+8. Run PostgreSQL parity tests against a disposable database when available:
+   `TEST_POSTGRES_URL=postgresql://... npm test -- --run tests/integration/postgresParity.test.ts`.
+
+The MSM staff account is separate from the SteamaCo provider account. Do not
+reuse the SteamaCo password for staff access. The helper hides the staff
+password, requires confirmation, generates fresh JWT and callback secrets, and
+keeps `backend/.env` at file mode `600`.
+
+For the SteamaCo connection, keep the service credentials only in
+`backend/.env` (or the production secret store):
+
+```dotenv
+STEAMA_ENABLED=true
+STEAMA_SERVICE_USERNAME=your-service-username
+STEAMA_SERVICE_PASSWORD=your-service-password
+```
+
+Do not put these values in the `web` environment, browser storage or Git.
+
+The local setup helper updates only those three settings, hides the password
+while it is entered and sets file mode `600`:
+
+```bash
+./scripts/configure-steama.sh
+```
 
 ## CI TypeScript compatibility guardrails
 - Keep backend code compatible with the current TypeScript target/library used in CI.

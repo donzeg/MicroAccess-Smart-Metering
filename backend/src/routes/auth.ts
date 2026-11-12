@@ -35,6 +35,10 @@ export const registerAuthRoutes = async (app: FastifyInstance): Promise<void> =>
       return { token, tokenType: 'Bearer' };
     }
 
+    if (env.operationMode === 'phase1_read_only') {
+      return reply.code(403).send({ message: 'Customer self-service is not enabled in Phase 1' });
+    }
+
     if (parsed.data.username !== env.customerUser || parsed.data.password !== env.customerPassword) {
       return reply.code(401).send({ message: 'Invalid credentials' });
     }

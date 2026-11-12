@@ -1,0 +1,13 @@
+snapshot_date_utc,source,metric,count,status,required_action
+2026-10-26,SteamaCo authenticated read-only API,provider_customers,33,Observed,Reconcile to the approved customer and service-account register
+2026-10-26,SteamaCo authenticated read-only API,provider_meters,31,Observed,Reconcile to physical asset and installation evidence
+2026-10-26,SteamaCo authenticated read-only API,meters_with_observed_customer_assignment,5,Exception,Validate each assignment and remediate unassigned meters
+2026-10-26,SteamaCo authenticated read-only API,unassigned_meters,26,Critical exception,Assign or classify as spare retired source bulk or non-billable
+2026-10-26,SteamaCo authenticated read-only API,customers_without_observed_meter_assignment,28,Critical exception,Assign a valid current meter or classify the service account
+2026-10-26,SteamaCo authenticated read-only API,online_meters,1,Exception,Select only proven online meters for the initial pilot
+2026-10-26,SteamaCo authenticated read-only API,offline_meters,3,Exception,Diagnose communication power commissioning and installation state
+2026-10-26,SteamaCo authenticated read-only API,never_online_meters,27,Critical exception,Verify installation commissioning gateway association and asset identity
+2026-10-26,SteamaCo authenticated read-only API,meters_in_current_site_reading_window,2,Exception,Confirm required reading coverage per billable pilot meter
+2026-10-26,SteamaCo authenticated read-only API,current_site_reading_records,188,Observed,Retain as discovery evidence only and implement controlled ingestion
+2026-10-26,SteamaCo authenticated read-only API,customers_with_blank_payment_plan,30,Decision required,Assign an approved MSM billing mode and tariff independently
+2026-10-26,SteamaCo authenticated read-only API,customers_with_blank_service_tariff,31,Decision required,Publish and assign an approved MSM tariff version

@@ -1,4 +1,9 @@
 ﻿#  MicroAccess Smart Metering (MSM) - ON-PREMISE TECH STACK
+
+> [!WARNING]
+> This is a legacy deployment proposal, not a production runbook. Use the
+> deployment and security requirements in the
+> [target architecture](docs/product/TARGET_ARCHITECTURE.md) before deploying.
 ## Updated for Local Hosting + Cloudflare Tunnel
 
 ---
@@ -907,5 +912,4 @@ find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
 **Ready to build something completely different? **
 
 Let me know which design theme you prefer and we'll start implementing!
-
 

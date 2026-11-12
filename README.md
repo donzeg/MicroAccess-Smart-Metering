@@ -4,8 +4,32 @@ MicroAccess Smart Metering (MSM) is an on-premise smart metering product for mon
 
 MSM is designed for the current deployment context (single plaza in Abuja with 3 bulk meters and prepaid downstream meters) while keeping the architecture reusable for future deployments such as estates and malls.
 
+## Documentation Status
+
+The project is being redesigned from first principles following authenticated
+review of SteamaCo API release `v4.40.0`.
+
+Start with the [current documentation index](docs/README.md). In particular:
+
+- [SteamaCo API Contract](docs/vendor/steama/API_CONTRACT.md) records verified
+  upstream behavior.
+- [Product Requirements](docs/product/PRODUCT_REQUIREMENTS.md) defines the
+  intended product.
+- [Domain Model](docs/product/DOMAIN_MODEL.md) defines authoritative records
+  and invariants.
+- [Billing and Payments](docs/product/BILLING_AND_PAYMENTS.md) defines the
+  target financial lifecycle.
+- [Target Architecture](docs/product/TARGET_ARCHITECTURE.md) and
+  [Delivery Plan](docs/product/DELIVERY_PLAN.md) define how the replacement
+  product should be built and certified.
+
+Root-level project, architecture and technology documents predate authenticated
+API discovery and are retained as legacy context. The current backend is a
+prototype and must not be treated as production-ready billing software.
+
 ## Table of Contents
 - [MicroAccess Smart Metering (MSM)](#microaccess-smart-metering-msm)
+	- [Documentation Status](#documentation-status)
 	- [Table of Contents](#table-of-contents)
 	- [Product Overview](#product-overview)
 	- [Current Business Context](#current-business-context)
@@ -44,7 +68,23 @@ MSM provides two aligned interfaces:
 - Consumption and transaction history
 - Notifications for important events
 
-The product principle is strict: build only features that map to available Steama APIs.
+The product principle is strict: provider-dependent features require a verified
+SteamaCo contract, while MSM-owned functions such as identity, tariff
+versioning, billing, ledger and reconciliation require explicit internal
+authority and evidence.
+
+## Current application slice
+
+The first operational web slice is now implemented under [`web`](web/README.md).
+It uses the Fastify backend as the only path to SteamaCo and provides live
+read-only inventory, communication freshness, assignment coverage, interpreted
+meter roles, exception priorities, detailed meter operations, customer coverage
+and a separate management view.
+
+Service credentials are stored only in `backend/.env` or the production secret
+store. The browser and web application environment never receive the SteamaCo
+username, password or token. Until those credentials are configured, the UI
+shows an explicit integration setup state and does not invent data.
 
 ## Current Business Context
 - Deployment model: On-premise server with Cloudflare Tunnel for internet exposure
@@ -69,7 +109,9 @@ Backend implementation is actively in progress and currently includes:
 1. Fastify + TypeScript backend foundation with strict validation and JWT role-based auth
 2. Customer-to-meter mapping endpoints with management/customer access controls
 3. Purchase lifecycle implementation with canonical states (`initiated`, `payment_confirmed_credit_pending`, `credited`, `failed`, `reconciled`)
-4. Provider integration through backend-managed Steama token flow and canonical top-up endpoint (`POST /customers/{id}/transactions/`)
+4. Prototype provider integration through a backend-managed Steama token flow;
+   the current top-up request body is not compatible with the verified live
+   transaction schema and must remain disabled for production mutations
 5. Callback security (HMAC signature verification, timestamp tolerance, replay protection)
 6. Pending-credit retry worker with backoff and failure-reason aggregation
 7. Inbound and outbound rate limiting with management telemetry endpoint (`GET /api/v1/ops/rate-limit-metrics`)
@@ -232,20 +274,24 @@ Deployment:
 See deployment details in [TECH_STACK_ON_PREM.md](TECH_STACK_ON_PREM.md).
 
 ## Steama API Mapping
-The table below describes key MSM capabilities and their Steama endpoint dependencies.
+
+The table below reflects the authenticated API review. The complete contract is
+in [docs/vendor/steama/API_CONTRACT.md](docs/vendor/steama/API_CONTRACT.md).
 
 | MSM Capability | Primary Endpoint(s) | Purpose |
 |---|---|---|
 | Meter registry | `/meters/` | Fetch meter metadata and status |
-| Meter readings | `/meter-metric-readings/` | Time-series usage data |
-| Meter totals | `/meter-metric-totals/` | Aggregated consumption values |
-| Customer profile and balance | `/customers/`, `/account-balances/` | Identity and financial state |
+| Utility readings | `/sites/{site_id}/utilities/{utility_id}/readings/`, customer equivalent | Cumulative register and interval usage data |
+| Utility usage | `/sites/{site_id}/utilities/{utility_id}/usage/`, customer equivalent | Timestamped usage series |
+| Electrical metrics | `/sites/{site_id}/metrics/{metric_code}/readings/`, `/totals/` | Voltage, current, power and related telemetry |
+| Customer profile and balance | `/customers/`, `/customers/{id}/balances/` | Provider identity and financial state |
 | Purchase records | `/customers/{id}/transactions/`, `/transactions/` | Unit purchase posting and transaction history |
-| Revenue snapshots | `/revenue/` | Finance and reporting views |
+| Provider reports | `/reports/` | Usage, uptime, failed-payment, anomaly and AMI reports |
 | Alerts | `/alerts/` | Operational event monitoring |
-| Online/active meter counts | `/online-meters-counts/`, `/active-meter-counts/` | Dashboard KPIs |
+| Online/active meter counts | `/stats/online-meters-counts/`, `/stats/active-meter-counts/` | Derived dashboard KPIs |
 
-For full endpoint categorization, see [STEAMA_API_CATEGORIZATION.md](STEAMA_API_CATEGORIZATION.md).
+The legacy [STEAMA_API_CATEGORIZATION.md](STEAMA_API_CATEGORIZATION.md) is not
+an implementation contract.
 
 ## Web Application Features
 The web application is the management operating console.
@@ -276,9 +322,9 @@ MVP modules:
 - Immutable change log for operational actions
 
 Primary endpoint families:
-- `/meters/`, `/meter-metric-readings/`, `/meter-metric-totals/`
-- `/customers/`, `/account-balances/`, `/customers/{id}/transactions/`, `/transactions/`
-- `/alerts/`, `/online-meters-counts/`, `/active-meter-counts/`, `/revenue/`
+- `/meters/`, `/sites/{id}/utilities/{utility_id}/readings/`
+- `/customers/`, `/customers/{id}/balances/`, `/customers/{id}/transactions/`
+- `/alerts/`, `/stats/`, `/reports/`
 
 ## Mobile Application Features
 The mobile application is the customer self-service channel that removes agent-dependent top-ups.
@@ -307,8 +353,8 @@ MVP modules:
 
 Primary endpoint families:
 - `/customers/{id}/`, `/customers/{id}/meters/`, `/customers/{id}/transactions/`
-- `/meters/{id}/metrics/.../readings/`
-- `/customer-messages/`, `/alerts/`
+- `/customers/{id}/utilities/{utility_id}/readings/` and `/usage/`
+- `/customers/{id}/messages/`, `/alerts/`
 
 ## Role and Access Model
 MSM uses role-aware access in one platform with two UX surfaces.
@@ -330,8 +376,10 @@ This section defines how a user in MSM is connected to an assigned meter in the 
 
 1. Identity and Assignment Ownership
 - MSM login identity is owned by MSM backend (not by provider login).
-- Meter assignment source of truth remains provider-side customer-to-meter assignment.
-- MSM maintains a local mapping between MSM user identity and provider customer identity.
+- SteamaCo assignments are synchronized evidence; MSM owns effective-dated
+  billable assignment history after review/approval.
+- MSM maintains explicit mappings among MSM identities, service accounts,
+  provider customers and provider meters.
 
 2. Required Mapping Records in MSM
 - `msm_user_id`
@@ -352,11 +400,15 @@ This section defines how a user in MSM is connected to an assigned meter in the 
 5. MSM backend returns scoped data for that user only.
 
 4. Purchase Flow Binding
-1. MSM receives confirmed payment.
-2. MSM backend posts credit transaction to provider using mapped customer:
+1. MSM creates a purchase and payment intent.
+2. MSM validates the gateway callback and verifies capture server-to-server.
+3. MSM posts the captured-money ledger journal.
+4. MSM creates a separately tracked provider-credit attempt using the mapped
+   customer:
 	- `POST /customers/{id}/transactions/`
-3. MSM stores provider transaction ID and updates local ledger state.
-4. User sees final status only after provider write is confirmed or definitively failed.
+5. MSM stores the provider transaction and reconciles it without creating a
+   second money receipt.
+6. The customer sees payment and provider-credit status separately.
 
 5. Synchronization Rules
 - Initial bootstrap sync creates mapping from provider customer assignments.
@@ -381,7 +433,8 @@ This section defines how a user in MSM is connected to an assigned meter in the 
 
 4. Payment success but provider credit post fails
 - MSM marks transaction as `payment_confirmed_credit_pending`.
-- Automated retry with idempotency key is executed.
+- Automated retry is allowed only after SteamaCo's idempotency mechanism is
+  confirmed; ambiguous outcomes move to reconciliation.
 - Customer is notified that payment is received but meter credit is pending.
 - If retries exhaust, incident is escalated to operations with manual remediation path.
 
@@ -391,44 +444,18 @@ This section defines how a user in MSM is connected to an assigned meter in the 
 
 6. Rate limit or provider outage
 - MSM queues non-critical sync calls and applies exponential backoff.
-- Purchase calls use bounded retries and deterministic final status messaging.
+- Purchase calls use bounded retries only for proven idempotent operations.
 - Management dashboard surfaces degraded-provider status in real time.
 
 7. Purchase Lifecycle State Machine
 
-Canonical statuses:
-- `initiated`: purchase request accepted by MSM backend, payment not yet confirmed.
-- `payment_confirmed_credit_pending`: payment confirmed, provider credit post pending or retrying.
-- `credited`: provider transaction successfully posted and reconciled to local ledger.
-- `failed`: purchase cannot be completed automatically (validation, mapping, or provider failure after retries).
-- `reconciled`: post-failure/manual resolution completed and ledger is consistent.
+The target lifecycle distinguishes initiated, awaiting payment, payment failed,
+payment captured, ledger posted, credit pending, credit submitted, credited,
+credit uncertain, credit rejected, reversal pending and reversed.
 
-Allowed transitions:
-1. `initiated` -> `payment_confirmed_credit_pending`
-2. `payment_confirmed_credit_pending` -> `credited`
-3. `payment_confirmed_credit_pending` -> `failed`
-4. `failed` -> `reconciled`
-
-Transition rules:
-- Only MSM backend can mutate state.
-- Provider credit posting must use idempotency keys.
-- User-facing success is shown only on `credited`.
-- `payment_confirmed_credit_pending` must trigger retries and customer-facing pending notice.
-- Every transition is audit-logged with correlation ID.
-
-8. Endpoint-to-State Transition Matrix
-
-| Transition | MSM Backend Action | Provider API Call | Success Condition | Failure Handling |
-|---|---|---|---|---|
-| `initiated` -> `payment_confirmed_credit_pending` | Validate payment callback, persist purchase intent with correlation ID | None | Payment provider confirms funds | Mark purchase `failed` if payment is rejected/expired |
-| `payment_confirmed_credit_pending` -> `credited` | Create provider credit request and persist external reference | `POST /customers/{id}/transactions/` | Provider returns successful transaction record | Retry with idempotency key until retry budget is exhausted |
-| `payment_confirmed_credit_pending` -> `failed` | Finalize failure state, notify customer, open ops incident | Optional reconciliation read via `/customers/{id}/transactions/` or `/transactions/` | Retry budget exhausted or non-recoverable validation error | Escalate to manual remediation queue |
-| `failed` -> `reconciled` | Run backfill/reconciliation job and close incident | `GET /customers/{id}/transactions/` and/or `GET /transactions/` | Missing local state recovered or manual correction completed | Keep `failed` and requeue reconciliation task |
-
-Operational notes:
-- User-visible purchase success is emitted only when state is `credited`.
-- `payment_confirmed_credit_pending` is user-visible as "payment received, credit pending".
-- Reconciliation jobs must be safe to rerun and must not double-credit customers.
+The complete transition rules and failure cases are defined in
+[Billing, Payments and Reconciliation](docs/product/BILLING_AND_PAYMENTS.md).
+The existing prototype state machine is not the production contract.
 
 ## Billing and Reconciliation Rules
 Current phase rules for financial correctness:
@@ -438,8 +465,10 @@ Current phase rules for financial correctness:
 - Deferred: generator billing attribution until generator bulk meter is installed and validated
 
 2. Customer Billing Rule
-- Customer purchase is posted through MSM backend to `/customers/{id}/transactions/`
-- Transaction confirmation is persisted in MSM ledger before user confirmation
+- Customer payment is verified and posted to the MSM ledger before a separate
+  SteamaCo credit attempt is created.
+- SteamaCo credit posting remains disabled until its payment payload and
+  idempotency semantics are certified.
 
 3. Monthly Reconciliation Rule
 - Collections from customer transactions
@@ -486,15 +515,42 @@ Current workspace includes architecture and prototype assets:
 - [2026.07.01 0920 - meter-readings.csv](2026.07.01%200920%20-%20meter-readings.csv): sample readings data
 
 ## Environment and Deployment
-Target deployment model:
 
-1. On-premise host server
-2. Containerized services via Docker Compose
-3. Cloudflare Tunnel for secure remote access
-4. Reverse proxy routing with Traefik
+The current on-premise deployment runs as two PM2 applications:
+
+1. `msm-backend` — compiled Fastify API on port `3000`;
+2. `msm-web` — compiled SvelteKit operations console on port `4173`.
+
+Both processes are defined in [`ecosystem.config.cjs`](ecosystem.config.cjs).
+The web process calls the backend over loopback, while staff access the web
+console over the server's Tailscale address. Build and safely reload only these
+two MSM processes with:
+
+```bash
+./scripts/deploy-pm2.sh
+```
+
+The script installs locked dependencies, runs the backend build and web checks,
+creates production builds, reloads the named MSM processes and saves the PM2
+process list for host restarts. It does not restart unrelated PM2 applications.
+
+Set `MSM_PUBLIC_ORIGIN` before deployment only when the external address changes.
+The default is `http://100.112.217.3:4173`.
+
+If PostgreSQL reports that authentication failed for the dedicated `msm` role,
+an administrator can align that role with the already configured, private
+`backend/.env` value without displaying the password:
+
+```bash
+./scripts/configure-postgres-role.sh
+```
+
+This helper refuses non-local hosts and any role or database other than `msm`.
+It requires the server administrator's normal `sudo` confirmation.
 
 Operational notes:
 - Keep Steama credentials server-side only
+- Keep `backend/.env` at mode `600`; it is excluded from Git
 - Apply cache TTL strategy to respect Steama rate limits
 - Run scheduled sync jobs for readings and monthly rollups
 - Maintain regular encrypted backups

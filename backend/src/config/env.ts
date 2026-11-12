@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Automated tests must never inherit service credentials or database settings
+// from a developer's real .env file. Tests can still opt into explicit values
+// (for example TEST_POSTGRES_URL) through the process environment.
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config();
+}
 
 const toNumber = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -23,6 +28,9 @@ const toBoolean = (value: string | undefined, fallback: boolean): boolean => {
 };
 
 export const env = {
+  nodeEnv: process.env.NODE_ENV ?? 'development',
+  operationMode:
+    process.env.MSM_OPERATION_MODE ?? (process.env.NODE_ENV === 'test' ? 'legacy_prototype' : 'phase1_read_only'),
   host: process.env.HOST ?? '0.0.0.0',
   port: toNumber(process.env.PORT, 3000),
   jwtSecret: process.env.JWT_SECRET ?? 'change-me-in-production',
@@ -39,6 +47,8 @@ export const env = {
   managementOpsLimitPerMinute: toNumber(process.env.MANAGEMENT_OPS_LIMIT_PER_MINUTE, 120),
   readsLimitPerMinute: toNumber(process.env.READS_LIMIT_PER_MINUTE, 240),
   providerRateLimitRps: toNumber(process.env.PROVIDER_RATE_LIMIT_RPS, 10),
+  retailTariffNgnPerKwh: toNumber(process.env.MSM_RETAIL_TARIFF_NGN_PER_KWH, 203),
+  retailTariffEffectiveFrom: process.env.MSM_RETAIL_TARIFF_EFFECTIVE_FROM?.trim() || null,
   steamaEnabled: toBoolean(process.env.STEAMA_ENABLED, false),
   steamaBaseUrl: process.env.STEAMA_BASE_URL ?? 'https://api.steama.co',
   steamaTokenPath: process.env.STEAMA_TOKEN_PATH ?? '/get-token/',

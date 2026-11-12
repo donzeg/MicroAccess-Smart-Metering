@@ -1,5 +1,12 @@
 ﻿# MicroAccess Smart Metering (MSM) - Technical Architecture Document
 
+> [!WARNING]
+> This is a legacy architecture proposal containing unverified provider paths
+> and superseded assumptions. Use the
+> [target architecture](docs/product/TARGET_ARCHITECTURE.md),
+> [domain model](docs/product/DOMAIN_MODEL.md), and
+> [verified API contract](docs/vendor/steama/API_CONTRACT.md).
+
 **Project:** Custom Metering Management Platform & Mobile Application  
 **Integration Partner:** Steama API Platform  
 **Version:** 1.0  
@@ -1072,5 +1079,4 @@ The system integrates with Steama API using only API-supported features, priorit
 **Document Maintained By:** sadiq.yusuf  
 **Last Updated:** July 7, 2026  
 **Next Review:** Weekly during development
-
 

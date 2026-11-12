@@ -1,5 +1,10 @@
 ﻿# MicroAccess Smart Metering (MSM) - FINAL TECHNOLOGY STACK
 
+> [!WARNING]
+> This is a legacy technology proposal. Its “final” status is superseded by the
+> [target architecture](docs/product/TARGET_ARCHITECTURE.md); unresolved
+> technology choices require explicit architecture decisions.
+
 **Decision Date:** July 7, 2026  
 **Status:** Finalized 
 
@@ -436,5 +441,4 @@ GitHub:
 -  **Deployment:** On-prem Docker Compose + Cloudflare Tunnel
 
 **All decisions finalized and production-ready!** 
-
 

@@ -1,0 +1,9 @@
+exception_id,exception_type,baseline_count,severity,owner_role,status,required_resolution,evidence_required
+EXC-001,Provider meter has no observed customer assignment,26,Critical,Metering operator,Open,Assign to an approved service account or classify as non-billable,Approved assignment or classification record
+EXC-002,Provider customer has no observed meter assignment,28,Critical,Billing owner,Open,Link the valid service account to a current meter or classify lifecycle state,Approved service-account disposition
+EXC-003,Meter has never been online,27,Critical,Metering operator,Open,Verify physical installation commissioning communication path and provider mapping,Commissioning checklist and fresh provider status
+EXC-004,Meter is offline,3,High,Metering operator,Open,Diagnose outage power communications gateway and device health,Incident record and restored status or approved exception
+EXC-005,Only a subset of meters produced current site readings,2,High,Metering operator,Open,Establish expected telemetry coverage for every pilot meter,Coverage report and approved pilot list
+EXC-006,Provider payment plan is blank,30,High,Billing owner,Open,Approve MSM billing mode and map provider field as non-authoritative evidence,Approved billing policy and service-account configuration
+EXC-007,Provider service tariff is blank,31,High,Billing owner,Open,Publish and assign an effective MSM tariff version,Approved tariff and assignment coverage report
+EXC-008,Provider relay connection state requires interpretation,31,Medium,Metering operator,Open,Validate state semantics against physical service before using operationally,Physical sample check and documented mapping

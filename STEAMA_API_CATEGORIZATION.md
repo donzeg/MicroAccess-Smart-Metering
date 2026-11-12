@@ -1,5 +1,11 @@
 ﻿# STEAMA API - Comprehensive Categorization & Use Cases
 
+> [!WARNING]
+> This is a legacy concept document created before authenticated API discovery.
+> It contains stale paths and unverified operations. Use the
+> [verified SteamaCo API contract](docs/vendor/steama/API_CONTRACT.md) and
+> [capability matrix](docs/vendor/steama/CAPABILITY_MATRIX.md) for current work.
+
 **Document Created:** July 7, 2026  
 **Purpose:** Categorize all Steama APIs for building a Management Platform & Mobile Application
 
@@ -527,5 +533,4 @@ Authorization: Token <STEAMA_TOKEN>
 **Document Version:** 1.0  
 **Last Updated:** July 7, 2026  
 **Contact:** sadiq.yusuf@steama.co
-
 

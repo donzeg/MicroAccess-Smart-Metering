@@ -1,5 +1,10 @@
 ﻿#  MicroAccess Smart Metering (MSM) PROJECT - COMPLETE DELIVERABLES
 
+> [!WARNING]
+> This is a legacy planning summary, not evidence of complete delivery or
+> production readiness. Use the [current documentation index](docs/README.md)
+> and [delivery plan](docs/product/DELIVERY_PLAN.md).
+
 **Date:** July 7, 2026  
 **Project:** Custom Metering Management Platform & Mobile Application  
 **Status:** Backend Implementation in Progress (API foundation, lifecycle, security, throttling, and observability active)
@@ -652,5 +657,4 @@ You now have:
 **Created by:** Sadiq Yusuf  
 **Date:** July 7, 2026  
 **Project:** MicroAccess Smart Metering (MSM) - Custom Metering Management Platform
-
 
