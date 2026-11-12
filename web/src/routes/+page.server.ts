@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { loadOperationsOverview } from '#lib/server/msmApi.js';
+import { clearManagementSession } from '#lib/server/session.js';
 
 export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 	const token = cookies.get('msm_session');
@@ -11,7 +12,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 	const forceRefresh = url.searchParams.get('refresh') === 'true';
 	const result = await loadOperationsOverview(fetch, token, forceRefresh);
 	if (result.status === 401) {
-		cookies.delete('msm_session', { path: '/' });
+		clearManagementSession(cookies, url.protocol);
 		redirect(303, '/login');
 	}
 
@@ -23,8 +24,8 @@ export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 };
 
 export const actions: Actions = {
-	logout: async ({ cookies }) => {
-		cookies.delete('msm_session', { path: '/' });
+	logout: async ({ cookies, url }) => {
+		clearManagementSession(cookies, url.protocol);
 		redirect(303, '/login');
 	}
 };

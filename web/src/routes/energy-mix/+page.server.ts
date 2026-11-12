@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { loadEnergyMix } from '#lib/server/msmApi.js';
+import { clearManagementSession } from '#lib/server/session.js';
 import type { EnergyMixPeriod } from '#lib/types.js';
 
 const PERIODS: EnergyMixPeriod[] = ['hourly', 'daily', 'weekly', 'monthly'];
@@ -35,7 +36,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 		customRange
 	);
 	if (result.status === 401) {
-		cookies.delete('msm_session', { path: '/' });
+		clearManagementSession(cookies, url.protocol);
 		redirect(303, '/login');
 	}
 

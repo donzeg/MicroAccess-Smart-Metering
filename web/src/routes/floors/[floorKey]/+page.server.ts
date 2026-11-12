@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { loadFloorAnalysis, recordFloorTenancy } from '#lib/server/msmApi.js';
+import { clearManagementSession } from '#lib/server/session.js';
 import type { EnergyMixPeriod, FloorKey } from '#lib/types.js';
 
 const PERIODS: EnergyMixPeriod[] = ['hourly', 'daily', 'weekly', 'monthly'];
@@ -46,7 +47,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, params, url }) => {
 		customRange
 	);
 	if (result.status === 401) {
-		cookies.delete('msm_session', { path: '/' });
+		clearManagementSession(cookies, url.protocol);
 		redirect(303, '/login');
 	}
 
@@ -62,7 +63,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, params, url }) => {
 };
 
 export const actions: Actions = {
-	recordTenancy: async ({ cookies, fetch, request }) => {
+	recordTenancy: async ({ cookies, fetch, request, url }) => {
 		const token = cookies.get('msm_session');
 		if (!token) redirect(303, '/login');
 		const values = await request.formData();
@@ -81,7 +82,7 @@ export const actions: Actions = {
 			evidenceReference
 		});
 		if (result.status === 401) {
-			cookies.delete('msm_session', { path: '/' });
+			clearManagementSession(cookies, url.protocol);
 			redirect(303, '/login');
 		}
 		if (!result.ok) {

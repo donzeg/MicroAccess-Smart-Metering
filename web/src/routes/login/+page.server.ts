@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { managementLogin } from '#lib/server/msmApi.js';
+import { setManagementSession } from '#lib/server/session.js';
 
 export const load: PageServerLoad = async ({ cookies }) => {
 	if (cookies.get('msm_session')) {
@@ -24,13 +25,7 @@ export const actions: Actions = {
 			return fail(result.status, { message: result.error?.message ?? 'Sign-in could not be completed.', username });
 		}
 
-		cookies.set('msm_session', result.data.token, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'strict',
-			secure: url.protocol === 'https:',
-			maxAge: 60 * 60 * 12
-		});
+		setManagementSession(cookies, result.data.token, url.protocol);
 		redirect(303, '/');
 	}
 };
