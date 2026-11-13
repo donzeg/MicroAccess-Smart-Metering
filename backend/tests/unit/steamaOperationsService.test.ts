@@ -94,7 +94,57 @@ describe('SteamaOperationsService', () => {
     await service.getOverview(true);
 
     expect(cached.dataSource.cached).toBe(true);
-    expect(request).toHaveBeenCalledTimes(6);
+    expect(request).toHaveBeenCalledTimes(8);
+  });
+
+  it('supplements the meter register with the newest cumulative reading from the reading window', async () => {
+    const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/') {
+        return Promise.resolve({
+          count: 2,
+          results: [
+            { id: 1, reference: '0308000187515', name: 'Solar meter', offline_duration_status: 'Online' },
+            { id: 2, reference: 'MTR-NO-READING', name: 'Customer meter', offline_duration_status: 'Online' }
+          ]
+        });
+      }
+      if (path === '/customers/') return Promise.resolve({ count: 0, results: [] });
+      if (path === '/sites/') return Promise.resolve({ count: 1, results: [{ id: 20 }] });
+      if (path === '/sites/20/utilities/') return Promise.resolve({ count: 1, results: [{ id: 5 }] });
+      if (path === '/sites/20/utilities/5/readings/') {
+        return Promise.resolve({
+          count: 3,
+          results: [
+            { timestamp: '2026-11-13T19:00:00Z', meter: 1, meter_reference: '0308000187515', reading: 31817, usage_amount: 27 },
+            { timestamp: '2026-11-13T20:00:00Z', meter: 1, meter_reference: '0308000187515', reading: 31822, usage_amount: 5 },
+            { timestamp: '2026-11-13T21:00:00Z', meter: 1, meter_reference: '0308000187515', reading: 31822, usage_amount: 0 }
+          ]
+        });
+      }
+      throw new Error(`unexpected_path:${path}`);
+    });
+
+    const overview = await new SteamaOperationsService({ request }, 60_000).getOverview();
+
+    expect(overview.meters[0].latestReadingKwh).toBe(31822);
+    expect(overview.meters[1].latestReadingKwh).toBeNull();
+    expect(overview.warnings).not.toContain('meter_readings_unavailable');
+  });
+
+  it('keeps the meter register available when the optional reading window cannot be loaded', async () => {
+    const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/') {
+        return Promise.resolve({ count: 1, results: [{ id: 1, reference: 'MTR-001', offline_duration_status: 'Online' }] });
+      }
+      if (path === '/customers/') return Promise.resolve({ count: 0, results: [] });
+      if (path === '/sites/') return Promise.reject(new Error('provider_sites_unavailable'));
+      throw new Error(`unexpected_path:${path}`);
+    });
+
+    const overview = await new SteamaOperationsService({ request }, 60_000).getOverview();
+
+    expect(overview.meters[0].latestReadingKwh).toBeNull();
+    expect(overview.warnings).toContain('meter_readings_unavailable');
   });
 
   it('reconciles a customer-side meter assignment when the meter omits its customer', async () => {

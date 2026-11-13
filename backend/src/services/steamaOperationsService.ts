@@ -481,6 +481,39 @@ const normalizeReading = (record: JsonObject): SteamaMeterReadingPoint | null =>
   };
 };
 
+const enrichMetersWithLatestReadings = (
+  meters: SteamaMeterSummary[],
+  readings: SteamaMeterReadingPoint[]
+): SteamaMeterSummary[] => {
+  const latestByProviderId = new Map<string, SteamaMeterReadingPoint>();
+  const latestByMeterNumber = new Map<string, SteamaMeterReadingPoint>();
+
+  const retainLatest = (
+    map: Map<string, SteamaMeterReadingPoint>,
+    key: string,
+    reading: SteamaMeterReadingPoint
+  ): void => {
+    if (!key || reading.readingKwh === null) return;
+    const current = map.get(key);
+    if (!current || reading.timestamp > current.timestamp) map.set(key, reading);
+  };
+
+  for (const reading of readings) {
+    retainLatest(latestByProviderId, reading.meterId, reading);
+    retainLatest(latestByMeterNumber, canonicalMeterNumber(reading.meterNumber), reading);
+  }
+
+  return meters.map((meter) => {
+    if (meter.latestReadingKwh !== null) return meter;
+    const reading =
+      latestByProviderId.get(meter.providerId) ??
+      latestByMeterNumber.get(canonicalMeterNumber(meter.meterNumber));
+    return reading?.readingKwh === null || reading?.readingKwh === undefined
+      ? meter
+      : { ...meter, latestReadingKwh: reading.readingKwh };
+  });
+};
+
 const parseDirectiveData = (value: unknown): JsonObject => {
   if (isObject(value)) return value;
   if (typeof value !== 'string' || value.trim().length === 0) return {};
@@ -887,7 +920,13 @@ export class SteamaOperationsService {
     const customers = customerCollection.records.map((record) =>
       normalizeCustomer(record, meterNumbersByCustomer)
     );
-    const meters = reconcileMeterAssignments(providerMeters, customers);
+    let meters = reconcileMeterAssignments(providerMeters, customers);
+    try {
+      const readingWindow = await this.getReadingWindow(forceRefresh);
+      meters = enrichMetersWithLatestReadings(meters, readingWindow);
+    } catch {
+      warnings.push('meter_readings_unavailable');
+    }
     const freshnessCounts = countBy(meters, (meter) => meter.freshnessBucket);
     const roleCounts = countBy(meters, (meter) => meter.operationalRole);
     const modelCounts = countBy(meters, (meter) => meter.model || 'Not provided');
