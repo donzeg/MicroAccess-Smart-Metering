@@ -28,6 +28,7 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
   private readonly readings = new Map<string, MeterArchiveReadingInput>();
   private readonly statuses: MeterArchiveStatusInput[] = [];
   private readonly runs = new Map<string, SyncRun>();
+  private readonly operationalSnapshots = new Map<string, { value: unknown; retrievedAt: string }>();
 
   async upsertReadings(readings: MeterArchiveReadingInput[]): Promise<number> {
     for (const reading of readings) {
@@ -106,6 +107,20 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
     const reading = Array.from(this.readings.values()).find((item) => item.meterId === providerMeterId);
     return reading
       ? { providerId: providerMeterId, meterNumber: reading.meterNumber, name: reading.meterNumber }
+      : null;
+  }
+
+  async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
+    this.operationalSnapshots.set(key, {
+      value: structuredClone(value),
+      retrievedAt
+    });
+  }
+
+  async getOperationalSnapshot<T>(key: string): Promise<{ value: T; retrievedAt: string } | null> {
+    const snapshot = this.operationalSnapshots.get(key);
+    return snapshot
+      ? { value: structuredClone(snapshot.value) as T, retrievedAt: snapshot.retrievedAt }
       : null;
   }
 

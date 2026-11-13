@@ -244,7 +244,53 @@ describe('SteamaOperationsService', () => {
     expect(history.dataSource).toMatchObject({ mode: 'local_archive', scope: 'local_historical_archive' });
     expect(history.coverage).toMatchObject({ readingCount: 1, from: '2026-05-01T10:00:00.000Z' });
     expect(history.summary).toMatchObject({ firstReadingKwh: 1000, latestReadingKwh: 1000, intervalUsageKwh: 12 });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('serves the last retained operational view without waiting for the provider', async () => {
+    const archive = new InMemoryMeterArchiveRepository();
+    const liveRequest = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/') {
+        return Promise.resolve({
+          count: 1,
+          results: [{ id: 1, reference: 'MTR-001', offline_duration_status: 'Online' }]
+        });
+      }
+      return Promise.resolve({ count: 0, results: [] });
+    });
+    const liveService = new SteamaOperationsService({ request: liveRequest }, 60_000, {
+      meterArchiveRepository: archive
+    });
+    await liveService.getOverview();
+
+    const unavailableRequest = vi.fn().mockRejectedValue(new Error('provider_unavailable'));
+    const restartedService = new SteamaOperationsService({ request: unavailableRequest }, 60_000, {
+      meterArchiveRepository: archive
+    });
+    const retained = await restartedService.getOverview();
+
+    expect(retained.summary.totalMeters).toBe(1);
+    expect(retained.dataSource.cached).toBe(true);
+    expect(unavailableRequest).not.toHaveBeenCalled();
+  });
+
+  it('coalesces concurrent overview requests into one provider refresh', async () => {
+    const request = vi.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { count: 0, results: [] };
+    });
+    const service = new SteamaOperationsService({ request }, 60_000);
+
+    const [first, second, third] = await Promise.all([
+      service.getOverview(),
+      service.getOverview(),
+      service.getOverview()
+    ]);
+
+    expect(first.summary.totalMeters).toBe(0);
+    expect(second.summary.totalMeters).toBe(0);
+    expect(third.summary.totalMeters).toBe(0);
+    expect(request).toHaveBeenCalledTimes(4);
   });
 
   it('keeps monetary customer ledger data separate from energy balances', async () => {

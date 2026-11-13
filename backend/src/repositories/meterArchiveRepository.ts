@@ -15,6 +15,8 @@ export interface MeterArchiveRepository {
   listUsageIntervals(providerMeterId: string, from: string, to: string): Promise<ArchivedUsageInterval[]>;
   latestUsageRecordedAt(providerMeterId: string): Promise<string | null>;
   findMeterIdentity(providerMeterId: string): Promise<ArchivedMeterIdentity | null>;
+  saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void>;
+  getOperationalSnapshot<T>(key: string): Promise<{ value: T; retrievedAt: string } | null>;
   beginSync(runId: string, startedAt: string): Promise<void>;
   completeSync(runId: string, completedAt: string, counts: MeterArchiveSyncCounts): Promise<void>;
   failSync(runId: string, completedAt: string, safeErrorCode: string): Promise<void>;

@@ -220,6 +220,29 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
       : null;
   }
 
+  async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO steama_operational_snapshots (provider, resource_key, payload, retrieved_at, updated_at)
+       VALUES ($1, $2, $3::jsonb, $4, NOW())
+       ON CONFLICT (provider, resource_key) DO UPDATE SET
+         payload = EXCLUDED.payload,
+         retrieved_at = EXCLUDED.retrieved_at,
+         updated_at = NOW()`,
+      [PROVIDER, key, JSON.stringify(value), retrievedAt]
+    );
+  }
+
+  async getOperationalSnapshot<T>(key: string): Promise<{ value: T; retrievedAt: string } | null> {
+    const result = await this.pool.query<{ payload: T; retrieved_at: Date }>(
+      `SELECT payload, retrieved_at
+       FROM steama_operational_snapshots
+       WHERE provider = $1 AND resource_key = $2`,
+      [PROVIDER, key]
+    );
+    const row = result.rows[0];
+    return row ? { value: row.payload, retrievedAt: row.retrieved_at.toISOString() } : null;
+  }
+
   async beginSync(runId: string, startedAt: string): Promise<void> {
     await this.pool.query(
       `INSERT INTO meter_archive_sync_runs (id, provider, state, started_at)

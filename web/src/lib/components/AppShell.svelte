@@ -6,6 +6,7 @@
 		CircleDollarSign,
 		Gauge,
 		LayoutDashboard,
+		LoaderCircle,
 		LogOut,
 		Moon,
 		PanelLeftClose,
@@ -16,6 +17,7 @@
 		SunMedium,
 		Users
 	} from '@lucide/svelte';
+	import { navigating } from '$app/state';
 	import { onMount, type Snippet } from 'svelte';
 
 	type NavKey = 'dashboard' | 'energy' | 'revenue' | 'floors' | 'meters' | 'customers' | 'exceptions' | 'reports';
@@ -70,8 +72,9 @@
 		<nav aria-label="Primary navigation">
 			<p><span>Workspace</span></p>
 			{#each links as link (link.key)}
-				<a class:active={active === link.key} href={link.href} aria-current={active === link.key ? 'page' : undefined} title={collapsed ? link.label : undefined}>
+				<a class:active={active === link.key} class:pending={navigating.to?.url.pathname === link.href} href={link.href} aria-current={active === link.key ? 'page' : undefined} aria-busy={navigating.to?.url.pathname === link.href ? 'true' : undefined} title={collapsed ? link.label : undefined}>
 					<link.icon size={17} /><span>{link.label}</span>
+					{#if navigating.to?.url.pathname === link.href}<LoaderCircle class="pending-indicator" size={14} />{/if}
 				</a>
 			{/each}
 		</nav>
@@ -107,6 +110,9 @@
 	nav a { display: flex; align-items: center; gap: .7rem; margin: .2rem 0; padding: .72rem .7rem; border-radius: .72rem; color: #a9c4d6; font-size: .76rem; font-weight: 650; text-decoration: none; }
 	nav a:hover, nav a.active { background: rgba(123, 189, 232, .12); color: white; }
 	nav a.active { box-shadow: inset 3px 0 0 var(--sky); }
+	nav a.pending { color: white; pointer-events: none; }
+	:global(.pending-indicator) { margin-left: auto; animation: nav-spin .7s linear infinite; }
+	@keyframes nav-spin { to { transform: rotate(360deg); } }
 	.phase-card { margin: auto 0 1rem; padding: .9rem; border: 1px solid rgba(189, 216, 233, .14); border-radius: .85rem; background: rgba(10, 65, 116, .42); }
 	.phase-card > span { display: flex; align-items: center; gap: .38rem; color: var(--sky); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
 	.phase-card strong { display: block; margin-top: .55rem; font-size: .76rem; }

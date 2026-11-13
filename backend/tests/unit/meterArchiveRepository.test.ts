@@ -54,4 +54,15 @@ describe('InMemoryMeterArchiveRepository', () => {
     await expect(repository.latestUsageRecordedAt('1')).resolves.toBe(timestamp);
     await expect(repository.getSyncStatus(true)).resolves.toMatchObject({ totalArchivedReadings: 2 });
   });
+
+  it('retains the latest successful operational snapshot independently from provider availability', async () => {
+    const repository = new InMemoryMeterArchiveRepository();
+    const retrievedAt = '2026-11-13T21:00:00.000Z';
+    await repository.saveOperationalSnapshot('overview', { totalMeters: 31 }, retrievedAt);
+
+    await expect(repository.getOperationalSnapshot<{ totalMeters: number }>('overview')).resolves.toEqual({
+      value: { totalMeters: 31 },
+      retrievedAt
+    });
+  });
 });

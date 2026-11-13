@@ -867,6 +867,7 @@ export class SteamaOperationsService {
   private readonly cachedEnergyMix = new Map<string, CachedEnergyMix>();
   private readonly cachedRevenueAnalysis = new Map<string, CachedRevenueAnalysis>();
   private readonly cachedFloorAnalysis = new Map<string, CachedFloorAnalysis>();
+  private readonly inFlightRequests = new Map<string, Promise<unknown>>();
   private readonly retailTariffNgnPerKwh: number;
   private readonly tariffEffectiveFrom: string | null;
   private readonly floorTenancyRepository: FloorTenancyRepository;
@@ -982,10 +983,29 @@ export class SteamaOperationsService {
 
   async getOverview(forceRefresh = false): Promise<SteamaOperationsOverview> {
     if (!forceRefresh && this.cachedOverview && this.cachedOverview.expiresAt > Date.now()) {
-      return {
-        ...this.cachedOverview.value,
-        dataSource: { ...this.cachedOverview.value.dataSource, cached: true }
-      };
+      return this.asCached(this.cachedOverview.value);
+    }
+
+    if (!forceRefresh) {
+      const retained = await this.getRetainedSnapshot<SteamaOperationsOverview>('overview');
+      if (retained) {
+        this.cachedOverview = {
+          value: retained.value,
+          expiresAt: new Date(retained.retrievedAt).getTime() + this.cacheTtlMs
+        };
+        if (this.snapshotIsStale(retained.retrievedAt, this.cacheTtlMs)) {
+          this.refreshInBackground('overview', () => this.buildOverview(true));
+        }
+        return this.asCached(retained.value);
+      }
+    }
+
+    return this.runSingleFlight('overview', () => this.buildOverview(forceRefresh));
+  }
+
+  private async buildOverview(forceRefresh = false): Promise<SteamaOperationsOverview> {
+    if (!forceRefresh && this.cachedOverview && this.cachedOverview.expiresAt > Date.now()) {
+      return this.asCached(this.cachedOverview.value);
     }
 
     const [metersResult, customersResult, sitesResult] = await Promise.allSettled([
@@ -1073,6 +1093,7 @@ export class SteamaOperationsService {
     };
 
     this.cachedOverview = { value: overview, expiresAt: now + this.cacheTtlMs };
+    await this.retainSnapshot('overview', overview, retrievedAt);
     return overview;
   }
 
@@ -1086,12 +1107,19 @@ export class SteamaOperationsService {
 
   async getMeterHistory(providerId: string, forceRefresh = false): Promise<SteamaMeterHistory> {
     let meter: { providerId: string; meterNumber: string; name: string };
-    try {
-      meter = await this.getMeter(providerId);
-    } catch (error) {
-      const archivedIdentity = await this.meterArchiveRepository?.findMeterIdentity(providerId);
-      if (!archivedIdentity) throw error;
+    const archivedIdentity = !forceRefresh
+      ? await this.meterArchiveRepository?.findMeterIdentity(providerId)
+      : null;
+    if (archivedIdentity) {
       meter = archivedIdentity;
+    } else {
+      try {
+        meter = await this.getMeter(providerId);
+      } catch (error) {
+        const fallbackIdentity = await this.meterArchiveRepository?.findMeterIdentity(providerId);
+        if (!fallbackIdentity) throw error;
+        meter = fallbackIdentity;
+      }
     }
 
     let readings: SteamaMeterReadingPoint[] = [];
@@ -1161,6 +1189,31 @@ export class SteamaOperationsService {
   }
 
   async getEnergyMix(
+    period: EnergyMixPeriod,
+    forceRefresh = false,
+    customRange?: EnergyMixDateRange
+  ): Promise<SteamaEnergyMix> {
+    const cacheKey = `${period}:${customRange?.from ?? 'preset'}:${customRange?.to ?? 'preset'}`;
+    const cached = this.cachedEnergyMix.get(cacheKey);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return this.asCached(cached.value);
+    }
+
+    const snapshotKey = `energy-mix:${cacheKey}`;
+    if (!forceRefresh) {
+      const retained = await this.getRetainedSnapshot<SteamaEnergyMix>(snapshotKey);
+      if (retained) {
+        if (this.snapshotIsStale(retained.retrievedAt, Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS))) {
+          this.refreshInBackground(snapshotKey, () => this.buildEnergyMix(period, true, customRange));
+        }
+        return this.asCached(retained.value);
+      }
+    }
+
+    return this.runSingleFlight(snapshotKey, () => this.buildEnergyMix(period, forceRefresh, customRange));
+  }
+
+  private async buildEnergyMix(
     period: EnergyMixPeriod,
     forceRefresh = false,
     customRange?: EnergyMixDateRange
@@ -1347,10 +1400,36 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
+    await this.retainSnapshot(`energy-mix:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
   async getRevenueAnalysis(
+    period: EnergyMixPeriod,
+    forceRefresh = false,
+    customRange?: EnergyMixDateRange
+  ): Promise<SteamaRevenueAnalysis> {
+    const cacheKey = `${period}:${customRange?.from ?? 'preset'}:${customRange?.to ?? 'preset'}`;
+    const cached = this.cachedRevenueAnalysis.get(cacheKey);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return this.asCached(cached.value);
+    }
+
+    const snapshotKey = `revenue:${cacheKey}`;
+    if (!forceRefresh) {
+      const retained = await this.getRetainedSnapshot<SteamaRevenueAnalysis>(snapshotKey);
+      if (retained) {
+        if (this.snapshotIsStale(retained.retrievedAt, Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS))) {
+          this.refreshInBackground(snapshotKey, () => this.buildRevenueAnalysis(period, true, customRange));
+        }
+        return this.asCached(retained.value);
+      }
+    }
+
+    return this.runSingleFlight(snapshotKey, () => this.buildRevenueAnalysis(period, forceRefresh, customRange));
+  }
+
+  private async buildRevenueAnalysis(
     period: EnergyMixPeriod,
     forceRefresh = false,
     customRange?: EnergyMixDateRange
@@ -1511,10 +1590,36 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
+    await this.retainSnapshot(`revenue:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
   async getFloorAnalysis(
+    period: EnergyMixPeriod,
+    forceRefresh = false,
+    customRange?: EnergyMixDateRange
+  ): Promise<SteamaFloorAnalysis> {
+    const cacheKey = `${period}:${customRange?.from ?? 'preset'}:${customRange?.to ?? 'preset'}`;
+    const cached = this.cachedFloorAnalysis.get(cacheKey);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return this.asCached(cached.value);
+    }
+
+    const snapshotKey = `floors:${cacheKey}`;
+    if (!forceRefresh) {
+      const retained = await this.getRetainedSnapshot<SteamaFloorAnalysis>(snapshotKey);
+      if (retained) {
+        if (this.snapshotIsStale(retained.retrievedAt, Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS))) {
+          this.refreshInBackground(snapshotKey, () => this.buildFloorAnalysis(period, true, customRange));
+        }
+        return this.asCached(retained.value);
+      }
+    }
+
+    return this.runSingleFlight(snapshotKey, () => this.buildFloorAnalysis(period, forceRefresh, customRange));
+  }
+
+  private async buildFloorAnalysis(
     period: EnergyMixPeriod,
     forceRefresh = false,
     customRange?: EnergyMixDateRange
@@ -1827,10 +1932,23 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
+    await this.retainSnapshot(`floors:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
   async getCustomer(providerId: string): Promise<SteamaCustomerDetail> {
+    const snapshotKey = `customer:${providerId}`;
+    const retained = await this.getRetainedSnapshot<SteamaCustomerDetail>(snapshotKey);
+    if (retained) {
+      if (this.snapshotIsStale(retained.retrievedAt, this.cacheTtlMs)) {
+        this.refreshInBackground(snapshotKey, () => this.buildCustomer(providerId));
+      }
+      return retained.value;
+    }
+    return this.runSingleFlight(snapshotKey, () => this.buildCustomer(providerId));
+  }
+
+  private async buildCustomer(providerId: string): Promise<SteamaCustomerDetail> {
     const [customerPayload, balancesPayload, transactionsPayload, metersPayload] = await Promise.all([
       this.client.request<unknown>({ path: `/customers/${providerId}/` }),
       this.client.request<unknown>({ path: `/customers/${providerId}/balances/`, query: { page_size: 500 } }),
@@ -1859,7 +1977,7 @@ export class SteamaOperationsService {
     const usageCharges = transactions.filter((transaction) => transaction.category.toUpperCase() === 'UCH');
     const payments = transactions.filter((transaction) => transaction.category.toUpperCase() === 'PAY');
 
-    return {
+    const result: SteamaCustomerDetail = {
       ...summary,
       meters: meterRecords.map((record) => ({
         providerId: stringValue(firstValue(record, ['id', 'pk', 'provider_id'])),
@@ -1883,6 +2001,8 @@ export class SteamaOperationsService {
           : [])
       ]
     };
+    await this.retainSnapshot(`customer:${providerId}`, result, new Date().toISOString());
+    return result;
   }
 
   private async getReadingWindow(forceRefresh: boolean, persist = true): Promise<SteamaMeterReadingPoint[]> {
@@ -2019,6 +2139,11 @@ export class SteamaOperationsService {
   }
 
   private async getProviderTransactions(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {
+    const requestKey = `transactions:${category}:${rangeStartMs}`;
+    return this.runSingleFlight(requestKey, () => this.fetchProviderTransactions(category, rangeStartMs));
+  }
+
+  private async fetchProviderTransactions(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {
     const records: JsonObject[] = [];
     let page = 1;
     let pageCount = 1;
@@ -2042,5 +2167,58 @@ export class SteamaOperationsService {
     return records
       .map(normalizeCustomerTransaction)
       .filter((transaction) => transaction.category.toUpperCase() === category && Boolean(transaction.timestamp));
+  }
+
+  private asCached<T extends { dataSource: { cached: boolean } }>(value: T): T {
+    return {
+      ...value,
+      dataSource: { ...value.dataSource, cached: true }
+    };
+  }
+
+  private snapshotIsStale(retrievedAt: string, ttlMs: number): boolean {
+    const retrievedAtMs = new Date(retrievedAt).getTime();
+    return !Number.isFinite(retrievedAtMs) || retrievedAtMs + ttlMs <= Date.now();
+  }
+
+  private async getRetainedSnapshot<T>(
+    key: string
+  ): Promise<{ value: T; retrievedAt: string } | null> {
+    if (!this.meterArchiveRepository) return null;
+    try {
+      return await this.meterArchiveRepository.getOperationalSnapshot<T>(key);
+    } catch {
+      return null;
+    }
+  }
+
+  private async retainSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
+    if (!this.meterArchiveRepository) return;
+    try {
+      await this.meterArchiveRepository.saveOperationalSnapshot(key, value, retrievedAt);
+    } catch {
+      // A snapshot write must never make the live read-only page fail.
+    }
+  }
+
+  private runSingleFlight<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const current = this.inFlightRequests.get(key) as Promise<T> | undefined;
+    if (current) return current;
+
+    const request = operation();
+    this.inFlightRequests.set(key, request);
+    void request.then(
+      () => {
+        if (this.inFlightRequests.get(key) === request) this.inFlightRequests.delete(key);
+      },
+      () => {
+        if (this.inFlightRequests.get(key) === request) this.inFlightRequests.delete(key);
+      }
+    );
+    return request;
+  }
+
+  private refreshInBackground<T>(key: string, operation: () => Promise<T>): void {
+    void this.runSingleFlight(key, operation).catch(() => undefined);
   }
 }

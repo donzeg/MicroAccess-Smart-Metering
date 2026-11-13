@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
+	import { navigating } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { LayoutProps } from './$types';
 
@@ -19,6 +20,13 @@
 </svelte:head>
 
 {@render children()}
+
+{#if navigating.to}
+	<div class="navigation-progress" role="status" aria-live="polite">
+		<span aria-hidden="true"></span>
+		<strong>Opening page…</strong>
+	</div>
+{/if}
 
 <style global>
 	:root {
@@ -85,4 +93,8 @@
 	:global(button), :global(input), :global(select) { font-family: inherit; }
 	:global(button:focus-visible), :global(a:focus-visible), :global(input:focus-visible), :global(select:focus-visible) { outline: 3px solid rgba(123, 189, 232, .45); outline-offset: 2px; }
 	:global(::selection) { background: var(--sky); color: var(--navy); }
+	.navigation-progress { position: fixed; z-index: 1000; top: .8rem; left: 50%; display: flex; align-items: center; gap: .55rem; padding: .58rem .78rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); transform: translateX(-50%); }
+	.navigation-progress span { width: .8rem; height: .8rem; border: 2px solid var(--pale); border-top-color: var(--action); border-radius: 50%; animation: navigation-spin .7s linear infinite; }
+	.navigation-progress strong { font-size: .72rem; }
+	@keyframes navigation-spin { to { transform: rotate(360deg); } }
 </style>
