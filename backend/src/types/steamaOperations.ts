@@ -213,9 +213,9 @@ export interface SteamaMeterReadingPoint {
 export interface SteamaMeterHistory {
   dataSource: {
     provider: 'SteamaCo';
-    mode: 'live_read_only';
+    mode: 'live_read_only' | 'local_archive';
     retrievedAt: string;
-    scope: 'provider_recent_window';
+    scope: 'provider_recent_window' | 'local_historical_archive';
   };
   meter: {
     providerId: string;

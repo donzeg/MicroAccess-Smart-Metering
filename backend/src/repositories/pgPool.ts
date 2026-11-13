@@ -28,6 +28,10 @@ const MIGRATIONS: MigrationDefinition[] = [
   {
     id: '0003_floor_tenancy_history',
     fileName: 'floor_tenancy_history.postgres.ddl'
+  },
+  {
+    id: '0004_meter_reading_archive',
+    fileName: 'meter_reading_archive.postgres.ddl'
   }
 ];
 

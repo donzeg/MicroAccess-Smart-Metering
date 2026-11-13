@@ -62,7 +62,8 @@ describeWhenPostgres('Phase 1 PostgreSQL startup', () => {
       const result = await pool.query<{ id: string }>('SELECT id FROM schema_migrations ORDER BY id');
       expect(result.rows.map((row) => row.id)).toEqual([
         '0002_phase1_read_only_foundation',
-        '0003_floor_tenancy_history'
+        '0003_floor_tenancy_history',
+        '0004_meter_reading_archive'
       ]);
     } finally {
       await pool.end();

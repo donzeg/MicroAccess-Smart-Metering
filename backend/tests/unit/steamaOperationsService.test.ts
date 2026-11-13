@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { InMemoryMeterArchiveRepository } from '../../src/repositories/inMemoryMeterArchiveRepository.js';
 import { SteamaOperationsService } from '../../src/services/steamaOperationsService.js';
 
 describe('SteamaOperationsService', () => {
@@ -209,6 +210,41 @@ describe('SteamaOperationsService', () => {
     const history = await new SteamaOperationsService({ request }, 60_000).getMeterHistory('1');
     expect(history.coverage).toMatchObject({ readingCount: 2, from: '2026-11-01T00:00:00.000Z', to: '2026-11-01T01:00:00.000Z' });
     expect(history.summary).toMatchObject({ firstReadingKwh: 100, latestReadingKwh: 105, registerChangeKwh: 5, intervalUsageKwh: 5, anomalyCount: 0 });
+  });
+
+  it('serves retained meter history from the local archive without depending on provider retention', async () => {
+    const archive = new InMemoryMeterArchiveRepository();
+    await archive.upsertReadings([
+      {
+        source: 'utility_reading',
+        intervalStart: '2026-05-01T09:00:00.000Z',
+        timestamp: '2026-05-01T10:00:00.000Z',
+        readingKwh: 1000,
+        usageKwh: 12,
+        anomalous: false,
+        meterId: '1',
+        meterNumber: 'MTR-001',
+        customerId: null,
+        customerName: null
+      }
+    ]);
+    const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/1/') {
+        return Promise.resolve({ id: 1, reference: 'MTR-001', name: 'Source meter', meter_type_name: 'DS3100' });
+      }
+      throw new Error(`unexpected_path:${path}`);
+    });
+    const service = new SteamaOperationsService({ request }, 60_000, {
+      meterArchiveRepository: archive,
+      meterArchiveSyncEnabled: true
+    });
+
+    const history = await service.getMeterHistory('1');
+
+    expect(history.dataSource).toMatchObject({ mode: 'local_archive', scope: 'local_historical_archive' });
+    expect(history.coverage).toMatchObject({ readingCount: 1, from: '2026-05-01T10:00:00.000Z' });
+    expect(history.summary).toMatchObject({ firstReadingKwh: 1000, latestReadingKwh: 1000, intervalUsageKwh: 12 });
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('keeps monetary customer ledger data separate from energy balances', async () => {

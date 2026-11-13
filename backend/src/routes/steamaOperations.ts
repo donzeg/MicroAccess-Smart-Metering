@@ -73,6 +73,20 @@ const sendProviderError = (error: unknown, reply: FastifyReply): FastifyReply =>
 
 export const registerSteamaOperationsRoutes = async (app: FastifyInstance): Promise<void> => {
   app.get(
+    '/api/v1/ops/steama/archive-status',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
+    async (_request, reply) => {
+      if (!app.steamaOperationsService) {
+        return reply.code(503).send({
+          code: 'provider_not_configured',
+          message: 'The SteamaCo read-only integration has not been configured.'
+        });
+      }
+      return app.steamaOperationsService.getArchiveStatus();
+    }
+  );
+
+  app.get(
     '/api/v1/ops/steama/overview',
     { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
     async (request, reply) => {

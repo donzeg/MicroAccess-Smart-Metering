@@ -1,6 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import type { SteamaReadOnlyRequest } from './steamaReadOnlyClient.js';
 import { InMemoryFloorTenancyRepository } from '../repositories/inMemoryFloorTenancyRepository.js';
 import type { FloorTenancyRepository } from '../repositories/interfaces.js';
+import type { MeterArchiveRepository } from '../repositories/meterArchiveRepository.js';
+import type {
+  MeterArchiveReadingInput,
+  MeterArchiveSyncCounts,
+  MeterArchiveSyncStatus
+} from '../types/meterArchive.js';
 import type {
   FloorPositionTenancyTimeline,
   RecordFloorTenancyInput
@@ -70,6 +78,9 @@ export interface SteamaOperationsOptions {
   retailTariffNgnPerKwh?: number;
   tariffEffectiveFrom?: string | null;
   floorTenancyRepository?: FloorTenancyRepository;
+  meterArchiveRepository?: MeterArchiveRepository;
+  meterArchiveSyncEnabled?: boolean;
+  meterArchiveInitialBackfillDays?: number;
 }
 
 interface DirectiveReading {
@@ -859,6 +870,9 @@ export class SteamaOperationsService {
   private readonly retailTariffNgnPerKwh: number;
   private readonly tariffEffectiveFrom: string | null;
   private readonly floorTenancyRepository: FloorTenancyRepository;
+  private readonly meterArchiveRepository: MeterArchiveRepository | null;
+  private readonly meterArchiveSyncEnabled: boolean;
+  private readonly meterArchiveInitialBackfillDays: number;
 
   constructor(
     private readonly client: SteamaReadOnlyRequester,
@@ -868,6 +882,92 @@ export class SteamaOperationsService {
     this.retailTariffNgnPerKwh = options.retailTariffNgnPerKwh ?? 203;
     this.tariffEffectiveFrom = options.tariffEffectiveFrom ?? null;
     this.floorTenancyRepository = options.floorTenancyRepository ?? new InMemoryFloorTenancyRepository();
+    this.meterArchiveRepository = options.meterArchiveRepository ?? null;
+    this.meterArchiveSyncEnabled = options.meterArchiveSyncEnabled ?? false;
+    this.meterArchiveInitialBackfillDays = options.meterArchiveInitialBackfillDays ?? 3650;
+  }
+
+  async synchronizeArchive(): Promise<MeterArchiveSyncCounts> {
+    if (!this.meterArchiveRepository) {
+      throw new Error('meter_archive_not_configured');
+    }
+
+    const runId = randomUUID();
+    const startedAt = new Date().toISOString();
+    await this.meterArchiveRepository.beginSync(runId, startedAt);
+    try {
+      const [readings, metersPayload] = await Promise.all([
+        this.getReadingWindow(true, false),
+        this.client.request<unknown>({ path: '/meters/', query: { page_size: 500 } })
+      ]);
+      const archiveReadings = this.toArchiveReadings(readings, 'utility_reading');
+      const observedAt = new Date().toISOString();
+      const meters = asCollection(metersPayload).records.map((record) => normalizeMeter(record, Date.now()));
+      const statuses = meters.map((meter) => ({
+        observedAt,
+        providerMeterId: meter.providerId,
+        meterNumber: meter.meterNumber,
+        meterName: meter.name,
+        model: meter.model,
+        customerId: meter.customerId,
+        customerName: meter.customerName,
+        connectivity: meter.connectivity,
+        connectivityLabel: meter.connectivityLabel,
+        lastReadingAt: meter.lastReadingAt,
+        relayOn: meter.relayOn
+      }));
+      const [utilityReadingsStored, statusesStored] = await Promise.all([
+        this.meterArchiveRepository.upsertReadings(archiveReadings),
+        this.meterArchiveRepository.recordStatuses(statuses)
+      ]);
+      let directiveReadingsObserved = 0;
+      const syncEndMs = Date.now();
+      for (const meter of meters) {
+        const latestUsageAt = await this.meterArchiveRepository.latestUsageRecordedAt(meter.providerId);
+        const initialStartMs = syncEndMs - this.meterArchiveInitialBackfillDays * 24 * HOUR_MS;
+        const latestStartMs = latestUsageAt
+          ? new Date(latestUsageAt).getTime() - 2 * HOUR_MS
+          : initialStartMs;
+        const directiveReadings = await this.getDirectiveMeterReadings(
+          meter,
+          Math.max(initialStartMs, latestStartMs),
+          syncEndMs,
+          true,
+          false
+        );
+        directiveReadingsObserved += directiveReadings.length;
+      }
+      const counts: MeterArchiveSyncCounts = {
+        readingsObserved: archiveReadings.length + directiveReadingsObserved,
+        readingsStored: utilityReadingsStored + directiveReadingsObserved,
+        statusesObserved: statuses.length,
+        statusesStored
+      };
+      await this.meterArchiveRepository.completeSync(runId, new Date().toISOString(), counts);
+      return counts;
+    } catch (error) {
+      const safeErrorCode = error instanceof Error ? error.message.split(':')[0] : 'unknown_error';
+      await this.meterArchiveRepository.failSync(runId, new Date().toISOString(), safeErrorCode);
+      throw error;
+    }
+  }
+
+  getArchiveStatus(): Promise<MeterArchiveSyncStatus> {
+    if (!this.meterArchiveRepository) {
+      return Promise.resolve({
+        enabled: false,
+        state: 'not_started',
+        lastStartedAt: null,
+        lastCompletedAt: null,
+        lastSuccessfulAt: null,
+        lastErrorCode: null,
+        lastCounts: { readingsObserved: 0, readingsStored: 0, statusesObserved: 0, statusesStored: 0 },
+        totalArchivedReadings: 0,
+        earliestReadingAt: null,
+        latestReadingAt: null
+      });
+    }
+    return this.meterArchiveRepository.getSyncStatus(this.meterArchiveSyncEnabled);
   }
 
   getFloorTenancyTimeline(providerCustomerId: string): Promise<FloorPositionTenancyTimeline | null> {
@@ -985,31 +1085,59 @@ export class SteamaOperationsService {
   }
 
   async getMeterHistory(providerId: string, forceRefresh = false): Promise<SteamaMeterHistory> {
-    const [meter, readingWindow] = await Promise.all([
-      this.getMeter(providerId),
-      this.getReadingWindow(forceRefresh)
-    ]);
-    const readings = readingWindow
-      .filter((reading) => reading.meterId === providerId || reading.meterNumber === meter.meterNumber)
-      .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    let meter: { providerId: string; meterNumber: string; name: string };
+    try {
+      meter = await this.getMeter(providerId);
+    } catch (error) {
+      const archivedIdentity = await this.meterArchiveRepository?.findMeterIdentity(providerId);
+      if (!archivedIdentity) throw error;
+      meter = archivedIdentity;
+    }
+
+    let readings: SteamaMeterReadingPoint[] = [];
+    const warnings: string[] = [];
+    if (this.meterArchiveRepository) {
+      if (forceRefresh) {
+        try {
+          await this.getReadingWindow(true);
+        } catch {
+          warnings.push('The provider refresh failed; the locally retained archive is being shown.');
+        }
+      }
+      readings = await this.meterArchiveRepository.listMeterReadings(providerId, meter.meterNumber);
+      if (readings.length === 0) {
+        const providerWindow = await this.getReadingWindow(false);
+        readings = await this.meterArchiveRepository.listMeterReadings(providerId, meter.meterNumber);
+        if (readings.length === 0) {
+          readings = providerWindow.filter(
+            (reading) => reading.meterId === providerId || reading.meterNumber === meter.meterNumber
+          );
+        }
+      }
+      warnings.push('History is served from the local MSM archive and is retained beyond the provider recent window.');
+    } else {
+      const readingWindow = await this.getReadingWindow(forceRefresh);
+      readings = readingWindow.filter(
+        (reading) => reading.meterId === providerId || reading.meterNumber === meter.meterNumber
+      );
+      warnings.push('The provider reading endpoint exposes a recent window; a permanent local archive is not configured.');
+    }
+    readings.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
     const first = readings[0] ?? null;
     const latest = readings.at(-1) ?? null;
     const usageValues = readings.map((reading) => reading.usageKwh).filter((value): value is number => value !== null);
     const negativeValues = readings.some(
       (reading) => (reading.readingKwh !== null && reading.readingKwh < 0) || (reading.usageKwh !== null && reading.usageKwh < 0)
     );
-    const warnings = [
-      'The provider reading endpoint exposes a recent window; it is not yet a certified complete historical archive.'
-    ];
     if (readings.length === 0) warnings.push('No reading was returned for this meter in the current provider window.');
     if (negativeValues) warnings.push('Negative meter data is present and must be reviewed before interpretation.');
 
     return {
       dataSource: {
         provider: 'SteamaCo',
-        mode: 'live_read_only',
+        mode: this.meterArchiveRepository ? 'local_archive' : 'live_read_only',
         retrievedAt: new Date().toISOString(),
-        scope: 'provider_recent_window'
+        scope: this.meterArchiveRepository ? 'local_historical_archive' : 'provider_recent_window'
       },
       meter: { providerId, meterNumber: meter.meterNumber, name: meter.name },
       coverage: {
@@ -1063,7 +1191,7 @@ export class SteamaOperationsService {
     const histories = await Promise.all(
       sourceMeters.map(async (meter) => ({
         meter,
-        readings: await this.getDirectiveMeterReadings(meter.providerId, rangeStartMs, rangeEndMs)
+        readings: await this.getDirectiveMeterReadings(meter, rangeStartMs, rangeEndMs, forceRefresh)
       }))
     );
 
@@ -1447,7 +1575,7 @@ export class SteamaOperationsService {
     const historyResults = await Promise.allSettled(
       meterRequests.map(async ({ meter }) => ({
         meterId: meter.providerId,
-        readings: await this.getDirectiveMeterReadings(meter.providerId, range.start, range.end)
+        readings: await this.getDirectiveMeterReadings(meter, range.start, range.end, forceRefresh)
       }))
     );
     const historiesByMeter = new Map<string, DirectiveReading[]>();
@@ -1757,7 +1885,7 @@ export class SteamaOperationsService {
     };
   }
 
-  private async getReadingWindow(forceRefresh: boolean): Promise<SteamaMeterReadingPoint[]> {
+  private async getReadingWindow(forceRefresh: boolean, persist = true): Promise<SteamaMeterReadingPoint[]> {
     const now = Date.now();
     if (!forceRefresh && this.cachedReadingWindow && this.cachedReadingWindow.expiresAt > now) {
       return this.cachedReadingWindow.value;
@@ -1774,15 +1902,16 @@ export class SteamaOperationsService {
       for (const utility of utilities) {
         const utilityId = providerIdValue(firstValue(utility, ['id', 'url']));
         if (!utilityId) continue;
-        const payload = await this.client.request<unknown>({
-          path: `/sites/${siteId}/utilities/${utilityId}/readings/`,
-          query: { page_size: 1000 }
-        });
-        for (const record of asCollection(payload).records) {
+        const records = await this.getPagedRecords(`/sites/${siteId}/utilities/${utilityId}/readings/`, 1000);
+        for (const record of records) {
           const reading = normalizeReading(record);
           if (reading) readings.push(reading);
         }
       }
+    }
+
+    if (persist && this.meterArchiveRepository) {
+      await this.meterArchiveRepository.upsertReadings(this.toArchiveReadings(readings, 'utility_reading'));
     }
 
     this.cachedReadingWindow = { value: readings, expiresAt: now + this.cacheTtlMs };
@@ -1790,42 +1919,103 @@ export class SteamaOperationsService {
   }
 
   private async getDirectiveMeterReadings(
-    providerId: string,
+    meter: Pick<SteamaMeterSummary, 'providerId' | 'meterNumber' | 'customerId' | 'customerName'>,
     rangeStartMs: number,
-    rangeEndMs: number
+    rangeEndMs: number,
+    forceRefresh: boolean,
+    allowArchivedFallback = true
   ): Promise<DirectiveReading[]> {
+    const providerId = meter.providerId;
+    const from = new Date(rangeStartMs).toISOString();
+    const to = new Date(rangeEndMs).toISOString();
+    const archived = this.meterArchiveRepository
+      ? await this.meterArchiveRepository.listUsageIntervals(providerId, from, to)
+      : [];
+    if (archived.length > 0 && !forceRefresh) return archived;
+
+    const records: JsonObject[] = [];
+    let providerReadings: DirectiveReading[];
+    try {
+      let page = 1;
+      let pageCount = 1;
+      do {
+        const payload = await this.client.request<unknown>({
+          path: `/meters/${providerId}/directives/`,
+          query: {
+            nature: 'MR',
+            created_after: new Date(rangeStartMs).toISOString(),
+            created_before: new Date(rangeEndMs + 10 * 60_000).toISOString(),
+            sort_by: '-timestamp',
+            page_size: DIRECTIVE_PAGE_SIZE,
+            page
+          }
+        });
+        const collection = asCollection(payload);
+        records.push(...collection.records);
+        pageCount = Math.max(1, Math.ceil(collection.count / DIRECTIVE_PAGE_SIZE));
+        page += 1;
+      } while (page <= pageCount && page <= 100);
+
+      providerReadings = records.flatMap((record): DirectiveReading[] => {
+        const timestamp = isoDateValue(firstValue(record, ['timestamp', 'message_timestamp', 'created_at']));
+        if (!timestamp) return [];
+        const data = parseDirectiveData(firstValue(record, ['data', 'payload', 'message_data']));
+        const usageKwh = numberValue(firstValue(data, ['usage_amount', 'usage', 'usage_kwh']));
+        if (usageKwh === null || usageKwh < 0) return [];
+        const intervalStartMs = floorHour(new Date(timestamp).getTime()) - HOUR_MS;
+        if (intervalStartMs < rangeStartMs || intervalStartMs >= rangeEndMs) return [];
+        return [{ timestamp, intervalStart: new Date(intervalStartMs).toISOString(), usageKwh }];
+      });
+    } catch (error) {
+      if (allowArchivedFallback && archived.length > 0) return archived;
+      throw error;
+    }
+
+    if (this.meterArchiveRepository && providerReadings.length > 0) {
+      await this.meterArchiveRepository.upsertReadings(
+        providerReadings.map((reading) => ({
+          timestamp: reading.timestamp,
+          intervalStart: reading.intervalStart,
+          readingKwh: null,
+          usageKwh: reading.usageKwh,
+          anomalous: false,
+          meterId: providerId,
+          meterNumber: meter.meterNumber,
+          customerId: meter.customerId,
+          customerName: meter.customerName,
+          source: 'meter_directive' as const
+        }))
+      );
+      return this.meterArchiveRepository.listUsageIntervals(providerId, from, to);
+    }
+    return providerReadings;
+  }
+
+  private toArchiveReadings(
+    readings: SteamaMeterReadingPoint[],
+    source: MeterArchiveReadingInput['source']
+  ): MeterArchiveReadingInput[] {
+    return readings.flatMap((reading) => {
+      if (!reading.meterId || (reading.readingKwh === null && reading.usageKwh === null)) return [];
+      const intervalStart = reading.usageKwh === null
+        ? null
+        : new Date(floorHour(new Date(reading.timestamp).getTime()) - HOUR_MS).toISOString();
+      return [{ ...reading, source, intervalStart }];
+    });
+  }
+
+  private async getPagedRecords(path: string, pageSize: number): Promise<JsonObject[]> {
     const records: JsonObject[] = [];
     let page = 1;
     let pageCount = 1;
-
     do {
-      const payload = await this.client.request<unknown>({
-        path: `/meters/${providerId}/directives/`,
-        query: {
-          nature: 'MR',
-          created_after: new Date(rangeStartMs).toISOString(),
-          created_before: new Date(rangeEndMs + 10 * 60_000).toISOString(),
-          sort_by: '-timestamp',
-          page_size: DIRECTIVE_PAGE_SIZE,
-          page
-        }
-      });
+      const payload = await this.client.request<unknown>({ path, query: { page_size: pageSize, page } });
       const collection = asCollection(payload);
       records.push(...collection.records);
-      pageCount = Math.max(1, Math.ceil(collection.count / DIRECTIVE_PAGE_SIZE));
+      pageCount = Math.max(1, Math.ceil(collection.count / pageSize));
       page += 1;
     } while (page <= pageCount && page <= 100);
-
-    return records.flatMap((record): DirectiveReading[] => {
-      const timestamp = isoDateValue(firstValue(record, ['timestamp', 'message_timestamp', 'created_at']));
-      if (!timestamp) return [];
-      const data = parseDirectiveData(firstValue(record, ['data', 'payload', 'message_data']));
-      const usageKwh = numberValue(firstValue(data, ['usage_amount', 'usage', 'usage_kwh']));
-      if (usageKwh === null || usageKwh < 0) return [];
-      const intervalStartMs = floorHour(new Date(timestamp).getTime()) - HOUR_MS;
-      if (intervalStartMs < rangeStartMs || intervalStartMs >= rangeEndMs) return [];
-      return [{ timestamp, intervalStart: new Date(intervalStartMs).toISOString(), usageKwh }];
-    });
+    return records;
   }
 
   private async getProviderTransactions(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {

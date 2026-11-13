@@ -226,9 +226,9 @@ export interface MeterReadingPoint {
 export interface MeterHistory {
 	dataSource: {
 		provider: 'SteamaCo';
-		mode: 'live_read_only';
+		mode: 'live_read_only' | 'local_archive';
 		retrievedAt: string;
-		scope: 'provider_recent_window';
+		scope: 'provider_recent_window' | 'local_historical_archive';
 	};
 	meter: { providerId: string; meterNumber: string; name: string };
 	coverage: { from: string | null; to: string | null; readingCount: number };

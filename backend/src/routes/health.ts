@@ -29,6 +29,8 @@ export const registerHealthRoutes = async (app: FastifyInstance): Promise<void> 
       storageMode: env.storageMode,
       customerSelfServiceEnabled: env.operationMode === 'legacy_prototype',
       providerReadOnlyIntegrationConfigured: env.operationMode === 'phase1_read_only' && env.steamaEnabled,
+      localMeterArchiveEnabled:
+        env.operationMode === 'phase1_read_only' && env.storageMode === 'postgres' && env.meterArchiveSyncEnabled,
       providerCreditEnabled: env.operationMode === 'legacy_prototype' && env.steamaEnabled,
       providerDirectivesEnabled: false
     })

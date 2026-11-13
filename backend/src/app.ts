@@ -12,6 +12,7 @@ import { InMemoryPurchaseRepository } from './repositories/inMemoryPurchaseRepos
 import type { CustomerMeterRepository, PurchaseAuditLogRepository, PurchaseRepository } from './repositories/interfaces.js';
 import { PgCustomerMeterRepository } from './repositories/pgCustomerMeterRepository.js';
 import { PgFloorTenancyRepository } from './repositories/pgFloorTenancyRepository.js';
+import { PgMeterArchiveRepository } from './repositories/pgMeterArchiveRepository.js';
 import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogRepository.js';
 import { createPgPool, runPgMigrations } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
@@ -30,6 +31,7 @@ import { PurchaseService } from './services/purchaseService.js';
 import { SteamaOperationsService } from './services/steamaOperationsService.js';
 import { SteamaReadOnlyClient } from './services/steamaReadOnlyClient.js';
 import { PendingCreditRetryWorker } from './workers/pendingCreditRetryWorker.js';
+import { SteamaReadingSyncWorker } from './workers/steamaReadingSyncWorker.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -61,6 +63,10 @@ export const buildApp = (): FastifyInstance => {
   const useSteamaCreditProvider =
     legacyPrototypeEnabled && env.steamaEnabled && env.steamaUsername.length > 0 && env.steamaPassword.length > 0;
 
+  const meterArchiveRepository = pool && readOnlyIntegrationEnabled
+    ? new PgMeterArchiveRepository(pool)
+    : null;
+
   const steamaOperationsService = readOnlyIntegrationEnabled
     ? new SteamaOperationsService(
         new SteamaReadOnlyClient({
@@ -77,7 +83,10 @@ export const buildApp = (): FastifyInstance => {
           tariffEffectiveFrom: env.retailTariffEffectiveFrom,
           floorTenancyRepository: pool
             ? new PgFloorTenancyRepository(pool)
-            : new InMemoryFloorTenancyRepository()
+            : new InMemoryFloorTenancyRepository(),
+          meterArchiveRepository: meterArchiveRepository ?? undefined,
+          meterArchiveSyncEnabled: env.meterArchiveSyncEnabled,
+          meterArchiveInitialBackfillDays: env.meterArchiveInitialBackfillDays
         }
       )
     : null;
@@ -94,6 +103,19 @@ export const buildApp = (): FastifyInstance => {
     'Backend runtime mode selected'
   );
   let pendingCreditRetryWorker: PendingCreditRetryWorker | null = null;
+  const steamaReadingSyncWorker = steamaOperationsService && meterArchiveRepository
+    ? new SteamaReadingSyncWorker({
+        enabled: env.meterArchiveSyncEnabled,
+        intervalMs: env.meterArchiveSyncIntervalMs,
+        maxIntervalMs: env.meterArchiveSyncMaxIntervalMs,
+        service: steamaOperationsService,
+        logger: {
+          info: (obj, msg) => app.log.info(obj, msg),
+          warn: (obj, msg) => app.log.warn(obj, msg),
+          error: (obj, msg) => app.log.error(obj, msg)
+        }
+      })
+    : null;
 
   if (legacyPrototypeEnabled) {
     const purchaseRepository: PurchaseRepository = pool
@@ -154,16 +176,19 @@ export const buildApp = (): FastifyInstance => {
     }
 
     pendingCreditRetryWorker?.start();
+    steamaReadingSyncWorker?.start();
   });
 
   if (pool) {
     app.addHook('onClose', async () => {
       pendingCreditRetryWorker?.stop();
+      steamaReadingSyncWorker?.stop();
       await pool?.end();
     });
   } else {
     app.addHook('onClose', async () => {
       pendingCreditRetryWorker?.stop();
+      steamaReadingSyncWorker?.stop();
     });
   }
 
