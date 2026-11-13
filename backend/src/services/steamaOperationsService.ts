@@ -416,6 +416,53 @@ const normalizeCustomer = (
   };
 };
 
+const canonicalMeterNumber = (value: string): string => value.replace(/\s+/g, '').toLowerCase();
+
+const assignedMeterNumbers = (customer: SteamaCustomerSummary): string[] =>
+  (customer.assignedMeterNumber ?? '')
+    .split(/[,;|]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+/**
+ * SteamaCo does not always expose an assignment in both directions. A customer
+ * record can identify its meter while the corresponding meter record omits its
+ * customer. Reconcile those two read-only views without overriding an explicit
+ * assignment returned on the meter itself.
+ */
+const reconcileMeterAssignments = (
+  meters: SteamaMeterSummary[],
+  customers: SteamaCustomerSummary[]
+): SteamaMeterSummary[] => {
+  const customerByMeterNumber = new Map<string, SteamaCustomerSummary | null>();
+
+  for (const customer of customers) {
+    for (const meterNumber of assignedMeterNumbers(customer)) {
+      const key = canonicalMeterNumber(meterNumber);
+      if (!key) continue;
+
+      const current = customerByMeterNumber.get(key);
+      customerByMeterNumber.set(key, current && current.providerId !== customer.providerId ? null : customer);
+    }
+  }
+
+  return meters.map((meter) => {
+    if (meter.assigned) return meter;
+
+    const customer = customerByMeterNumber.get(canonicalMeterNumber(meter.meterNumber));
+    if (!customer) return meter;
+
+    return {
+      ...meter,
+      customerId: customer.providerId,
+      customerName: customer.displayName,
+      assigned: true,
+      operationalRole: meter.operationalRole === 'unknown' ? 'customer_load' : meter.operationalRole,
+      roleEvidence: meter.operationalRole === 'unknown' ? 'assignment' : meter.roleEvidence
+    };
+  });
+};
+
 const normalizeReading = (record: JsonObject): SteamaMeterReadingPoint | null => {
   const timestamp = isoDateValue(firstValue(record, ['timestamp', 'recorded_at', 'datetime']));
   if (!timestamp) return null;
@@ -827,9 +874,9 @@ export class SteamaOperationsService {
     const customerCollection =
       customersResult.status === 'fulfilled' ? asCollection(customersResult.value) : { count: 0, records: [] };
     const siteCollection = sitesResult.status === 'fulfilled' ? asCollection(sitesResult.value) : { count: 0, records: [] };
-    const meters = meterCollection.records.map((record) => normalizeMeter(record, now));
+    const providerMeters = meterCollection.records.map((record) => normalizeMeter(record, now));
     const meterNumbersByCustomer = new Map<string, string[]>();
-    for (const meter of meters) {
+    for (const meter of providerMeters) {
       if (!meter.customerId) continue;
       const meterNumbers = meterNumbersByCustomer.get(meter.customerId) ?? [];
       if (meter.meterNumber && !meterNumbers.includes(meter.meterNumber)) {
@@ -840,6 +887,7 @@ export class SteamaOperationsService {
     const customers = customerCollection.records.map((record) =>
       normalizeCustomer(record, meterNumbersByCustomer)
     );
+    const meters = reconcileMeterAssignments(providerMeters, customers);
     const freshnessCounts = countBy(meters, (meter) => meter.freshnessBucket);
     const roleCounts = countBy(meters, (meter) => meter.operationalRole);
     const modelCounts = countBy(meters, (meter) => meter.model || 'Not provided');

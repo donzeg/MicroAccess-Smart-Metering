@@ -7,11 +7,13 @@
 	import type { MeterSummary, OperationsException } from '#lib/types.js';
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
-	let selected = $state('all');
+	let selectedOverride = $state<string | null>(null);
+	let selected = $derived(selectedOverride ?? data.selectedType);
 	let overview = $derived(data.overview);
-	$effect(() => { selected = data.selectedType; });
 	const affected = (meter: MeterSummary, type: string) => type === 'never_online' ? meter.freshnessBucket === 'never_online' : type === 'safety' ? meter.criticalError === true || meter.lidTamper === true : type === 'unassigned_meters' ? !meter.assigned : type === 'stale_telemetry' ? ['eight_to_fourteen_days', 'over_fourteen_days'].includes(meter.freshnessBucket) : type === 'unclassified_role' ? meter.operationalRole === 'unknown' : false;
-	let visibleMeters = $derived((overview?.meters ?? []).filter((meter) => selected === 'all' ? true : affected(meter, selected)));
+	let customerException = $derived(selected === 'customers_without_meter');
+	let visibleMeters = $derived((overview?.meters ?? []).filter((meter) => selected === 'all' ? true : customerException ? false : affected(meter, selected)));
+	let visibleCustomers = $derived((overview?.customers ?? []).filter((customer) => customerException && !customer.assignedMeterNumber));
 	const exceptionTone = (severity: OperationsException['severity']): 'danger' | 'warning' | 'info' => severity === 'critical' ? 'danger' : severity === 'high' ? 'warning' : 'info';
 </script>
 
@@ -20,12 +22,16 @@
 	<PageHeader eyebrow="Operational control" title="Exception workspace" description="Prioritised communication, assignment and device-quality issues with direct links to affected records." refreshHref="/exceptions?refresh=true" />
 	{#if data.error}<section class="state">{data.error.message}</section>{:else if overview}
 		<section class="exception-grid">
-			<button class:active={selected === 'all'} onclick={() => selected = 'all'}><span>all</span><strong>{overview.meters.length}</strong><h2>Entire meter estate</h2><p>Clear the filter and review all meters.</p></button>
-			{#each overview.exceptions as item (item.key)}<button class:active={selected === item.key} onclick={() => selected = item.key}><StatusPill label={item.severity} tone={exceptionTone(item.severity)} /><strong>{item.count}</strong><h2>{item.label}</h2><p>{item.action}</p></button>{/each}
+			<button class:active={selected === 'all'} onclick={() => selectedOverride = 'all'}><span>all</span><strong>{overview.meters.length}</strong><h2>Entire meter estate</h2><p>Clear the filter and review all meters.</p></button>
+			{#each overview.exceptions as item (item.key)}<button class:active={selected === item.key} onclick={() => selectedOverride = item.key}><StatusPill label={item.severity} tone={exceptionTone(item.severity)} /><strong>{item.count}</strong><h2>{item.label}</h2><p>{item.action}</p></button>{/each}
 		</section>
 		<section class="panel">
-			<div class="heading"><div><p>Working list</p><h2>{selected === 'all' ? 'All meters' : overview.exceptions.find((item) => item.key === selected)?.label ?? 'Affected records'}</h2></div><span>{visibleMeters.length} meters</span></div>
-			<div class="list">{#each visibleMeters as meter (meter.providerId)}<a href={`/meters/${meter.providerId}`}><div><strong>{meter.meterNumber}</strong><span>{meter.name} · {meter.model}</span></div><div><small>Customer</small><strong>{meter.customerName ?? 'Unassigned'}</strong></div><div><small>Last reading</small><strong>{formatDateTime(meter.lastReadingAt)}</strong></div><div><small>Provider status</small><strong>{meter.connectivityLabel}</strong></div><ChevronRight size={17} /></a>{:else}<div class="empty">No meter is currently in this exception category.</div>{/each}</div>
+			<div class="heading"><div><p>Working list</p><h2>{selected === 'all' ? 'All meters' : overview.exceptions.find((item) => item.key === selected)?.label ?? 'Affected records'}</h2></div><span>{customerException ? `${visibleCustomers.length} customers` : `${visibleMeters.length} meters`}</span></div>
+			{#if customerException}
+				<div class="list customer-list">{#each visibleCustomers as customer (customer.providerId)}<a href={`/customers/${customer.providerId}`}><div><strong>{customer.displayName}</strong><span>{customer.accountNumber || 'No account number'}</span></div><div><small>Assigned meter</small><strong>Not observed</strong></div><div><small>Site</small><strong>{customer.siteName}</strong></div><div><small>Tariff</small><strong>{customer.tariffBand}</strong></div><ChevronRight size={17} /></a>{:else}<div class="empty">No customer is currently in this exception category.</div>{/each}</div>
+			{:else}
+				<div class="list">{#each visibleMeters as meter (meter.providerId)}<a href={`/meters/${meter.providerId}`}><div><strong>{meter.meterNumber}</strong><span>{meter.name} · {meter.model}</span></div><div><small>Customer</small><strong>{meter.customerName ?? 'Unassigned'}</strong></div><div><small>Last reading</small><strong>{formatDateTime(meter.lastReadingAt)}</strong></div><div><small>Provider status</small><strong>{meter.connectivityLabel}</strong></div><ChevronRight size={17} /></a>{:else}<div class="empty">No meter is currently in this exception category.</div>{/each}</div>
+			{/if}
 		</section>
 	{/if}
 </AppShell>

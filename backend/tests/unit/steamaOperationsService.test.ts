@@ -97,6 +97,50 @@ describe('SteamaOperationsService', () => {
     expect(request).toHaveBeenCalledTimes(6);
   });
 
+  it('reconciles a customer-side meter assignment when the meter omits its customer', async () => {
+    const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/') {
+        return Promise.resolve({
+          count: 1,
+          results: [
+            {
+              id: 1,
+              reference: '0179250930205',
+              meter_type_name: 'DS3600',
+              offline_duration_status: 'Online'
+            }
+          ]
+        });
+      }
+      if (path === '/customers/') {
+        return Promise.resolve({
+          count: 1,
+          results: [
+            {
+              id: 10,
+              first_name: '5th Floor -01',
+              last_name: 'Tenant Account',
+              meter_number: '017925093 0205'
+            }
+          ]
+        });
+      }
+      return Promise.resolve({ count: 1, results: [{ id: 20, name: 'Na-Aka Hub' }] });
+    });
+
+    const overview = await new SteamaOperationsService({ request }, 60_000).getOverview();
+
+    expect(overview.meters[0]).toMatchObject({
+      customerId: '10',
+      customerName: '5th Floor -01 Tenant Account',
+      assigned: true,
+      operationalRole: 'customer_load',
+      roleEvidence: 'assignment'
+    });
+    expect(overview.summary).toMatchObject({ assignedMeters: 1, unassignedMeters: 0 });
+    expect(overview.exceptions.map((item) => item.key)).not.toContain('unassigned_meters');
+  });
+
   it('builds dated meter history from the provider utility reading window', async () => {
     const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
       if (path === '/meters/1/') {
