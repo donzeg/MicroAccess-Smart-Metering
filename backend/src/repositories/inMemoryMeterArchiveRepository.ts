@@ -4,6 +4,7 @@ import type {
   ArchivedUsageInterval,
   MeterArchiveReadingInput,
   MeterArchiveStatusInput,
+  MeterArchiveTransactionInput,
   MeterArchiveSyncCounts,
   MeterArchiveSyncStatus
 } from '../types/meterArchive.js';
@@ -21,7 +22,9 @@ const emptyCounts = (): MeterArchiveSyncCounts => ({
   readingsObserved: 0,
   readingsStored: 0,
   statusesObserved: 0,
-  statusesStored: 0
+  statusesStored: 0,
+  transactionsObserved: 0,
+  transactionsStored: 0
 });
 
 export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
@@ -29,6 +32,7 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
   private readonly statuses: MeterArchiveStatusInput[] = [];
   private readonly runs = new Map<string, SyncRun>();
   private readonly operationalSnapshots = new Map<string, { value: unknown; retrievedAt: string }>();
+  private readonly transactions = new Map<string, MeterArchiveTransactionInput>();
 
   async upsertReadings(readings: MeterArchiveReadingInput[]): Promise<number> {
     for (const reading of readings) {
@@ -110,6 +114,29 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
       : null;
   }
 
+  async upsertTransactions(transactions: MeterArchiveTransactionInput[]): Promise<number> {
+    for (const transaction of transactions) {
+      const fallback = `${transaction.category}:${transaction.timestamp}:${transaction.customerId}:${transaction.amount}:${transaction.reference}`;
+      this.transactions.set(transaction.providerId || fallback, { ...transaction });
+    }
+    return transactions.length;
+  }
+
+  async listTransactions(category: 'UCH' | 'PAY', from: string, to: string): Promise<MeterArchiveTransactionInput[]> {
+    return Array.from(this.transactions.values())
+      .filter((transaction) => transaction.category === category && transaction.timestamp >= from && transaction.timestamp < to)
+      .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+      .map((transaction) => ({ ...transaction }));
+  }
+
+  async latestTransactionAt(category: 'UCH' | 'PAY'): Promise<string | null> {
+    return Array.from(this.transactions.values())
+      .filter((transaction) => transaction.category === category)
+      .map((transaction) => transaction.timestamp)
+      .sort()
+      .at(-1) ?? null;
+  }
+
   async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
     this.operationalSnapshots.set(key, {
       value: structuredClone(value),
@@ -150,6 +177,7 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
     const latest = Array.from(this.runs.values()).at(-1) ?? null;
     const latestSuccessful = Array.from(this.runs.values()).filter((run) => run.state === 'succeeded').at(-1) ?? null;
     const timestamps = Array.from(this.readings.values()).map((reading) => reading.timestamp).sort();
+    const transactionTimestamps = Array.from(this.transactions.values()).map((transaction) => transaction.timestamp).sort();
     return {
       enabled,
       state: latest?.state ?? 'not_started',
@@ -160,7 +188,10 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
       lastCounts: latest?.counts ?? emptyCounts(),
       totalArchivedReadings: this.readings.size,
       earliestReadingAt: timestamps[0] ?? null,
-      latestReadingAt: timestamps.at(-1) ?? null
+      latestReadingAt: timestamps.at(-1) ?? null,
+      totalArchivedTransactions: this.transactions.size,
+      earliestTransactionAt: transactionTimestamps[0] ?? null,
+      latestTransactionAt: transactionTimestamps.at(-1) ?? null
     };
   }
 }

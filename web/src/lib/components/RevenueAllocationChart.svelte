@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { EnergyMixPeriod, RevenueBucket } from '#lib/types.js';
 	let { buckets, period }: { buckets: RevenueBucket[]; period: EnergyMixPeriod } = $props();
-	let visibleBuckets = $derived(buckets.filter((bucket) => bucket.totalKwh > 0 || bucket.usageChargeTransactions > 0));
+	let visibleBuckets = $derived(buckets);
 	let maximum = $derived(Math.max(1, ...visibleBuckets.map((bucket) => bucket.customerUsageChargeNgn)));
 
 	const shortLabel = (label: string, value: EnergyMixPeriod): string => {
@@ -24,7 +24,7 @@
 			{@const unallocated = Math.max(0, bucket.customerUsageChargeNgn - allocated)}
 			<div class="column" title={`${bucket.label}: ${compactNaira(bucket.customerUsageChargeNgn)} customer charges; ${compactNaira(bucket.solarAttributedChargeNgn)} solar; ${compactNaira(bucket.gridAttributedChargeNgn)} grid; ${compactNaira(bucket.generatorAttributedChargeNgn)} generator; ${bucket.coveragePercent}% meter coverage`}>
 				<div class="value">{bucket.usageChargeTransactions === 0 ? '—' : compactNaira(bucket.customerUsageChargeNgn)}</div>
-				<div class:empty-bar={bucket.customerUsageChargeNgn === 0} class="bar-track">
+				<div class:empty-bar={bucket.customerUsageChargeNgn === 0} class:missing-source={bucket.coveragePercent === 0} class="bar-track">
 					{#if bucket.customerUsageChargeNgn === 0}
 						<span class="zero-mark" aria-hidden="true"></span>
 					{:else}
@@ -48,6 +48,7 @@
 	.column { display: grid; height: 100%; grid-template-rows: 1.3rem 1fr 1.1rem .8rem; align-items: end; text-align: center; }
 	.value { overflow: hidden; color: var(--text-muted); font-size: .48rem; text-overflow: ellipsis; white-space: nowrap; }
 	.bar-track { position: relative; height: 100%; overflow: hidden; border-radius: .35rem .35rem .18rem .18rem; background: repeating-linear-gradient(to top, var(--line-soft) 0, var(--line-soft) 1px, transparent 1px, transparent 25%); }
+	.bar-track.missing-source { border: 1px dashed var(--line); background: repeating-linear-gradient(135deg, transparent 0, transparent 7px, var(--line-soft) 7px, var(--line-soft) 10px); }
 	.bar { position: absolute; bottom: 0; width: 100%; overflow: hidden; border-radius: .35rem .35rem .15rem .15rem; box-shadow: 0 .2rem .6rem rgba(0,29,57,.12); }
 	.solar { background: linear-gradient(180deg, var(--sky), var(--teal)); }
 	.grid { background: linear-gradient(180deg, var(--blue), var(--nav-surface)); }

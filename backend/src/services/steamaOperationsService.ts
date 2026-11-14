@@ -848,15 +848,19 @@ const createFloorUsageBuckets = (
   }));
 };
 
-const normalizeCustomerTransaction = (record: JsonObject) => ({
-  providerId: stringValue(firstValue(record, ['id', 'pk', 'provider_id'])),
-  timestamp: isoDateValue(firstValue(record, ['timestamp', 'created_at', 'created'])) ?? '',
-  category: stringValue(firstValue(record, ['category', 'type'])) || 'Unknown',
-  amount: numberValue(firstValue(record, ['amount'])) ?? 0,
-  accountBalance: numberValue(firstValue(record, ['account_balance', 'balance'])),
-  meterNumber: stringValue(firstValue(record, ['meter_number', 'meter_reference'])),
-  reference: stringValue(firstValue(record, ['reference']))
-});
+const normalizeCustomerTransaction = (record: JsonObject): SteamaCustomerTransaction => {
+  const customer = firstValue(record, ['customer_id', 'customer', 'customer_provider_id']);
+  return {
+    providerId: stringValue(firstValue(record, ['id', 'pk', 'provider_id'])),
+    timestamp: isoDateValue(firstValue(record, ['timestamp', 'created_at', 'created'])) ?? '',
+    category: (stringValue(firstValue(record, ['category', 'type'])) || 'Unknown').toUpperCase(),
+    amount: numberValue(firstValue(record, ['amount'])) ?? 0,
+    accountBalance: numberValue(firstValue(record, ['account_balance', 'balance'])),
+    customerId: providerIdValue(customer) ?? '',
+    meterNumber: stringValue(firstValue(record, ['meter_number', 'meter_reference'])),
+    reference: stringValue(firstValue(record, ['reference']))
+  };
+};
 
 const countBy = <T>(records: T[], key: (record: T) => string): Map<string, number> => {
   const counts = new Map<string, number>();
@@ -962,6 +966,7 @@ export class SteamaOperationsService {
       throw new Error('meter_archive_not_configured');
     }
 
+    const previousStatus = await this.meterArchiveRepository.getSyncStatus(this.meterArchiveSyncEnabled);
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
     await this.meterArchiveRepository.beginSync(runId, startedAt);
@@ -1007,11 +1012,29 @@ export class SteamaOperationsService {
         );
         directiveReadingsObserved += directiveReadings.length;
       }
+      const initialStartMs = syncEndMs - this.meterArchiveInitialBackfillDays * 24 * HOUR_MS;
+      const transactionBatches: SteamaCustomerTransaction[][] = [];
+      for (const category of ['UCH', 'PAY'] as const) {
+        const latestTransactionAt = await this.meterArchiveRepository.latestTransactionAt(category);
+        const resumeAt = latestTransactionAt ?? previousStatus.lastSuccessfulAt;
+        const transactionStartMs = resumeAt
+          ? Math.max(initialStartMs, new Date(resumeAt).getTime() - 2 * HOUR_MS)
+          : initialStartMs;
+        transactionBatches.push(await this.fetchProviderTransactionsFromProvider(category, transactionStartMs));
+      }
+      const transactions = transactionBatches.flat();
+      const transactionsStored = await this.meterArchiveRepository.upsertTransactions(
+        transactions.filter((transaction): transaction is SteamaCustomerTransaction & { category: 'UCH' | 'PAY' } =>
+          transaction.category === 'UCH' || transaction.category === 'PAY'
+        )
+      );
       const counts: MeterArchiveSyncCounts = {
         readingsObserved: archiveReadings.length + directiveReadingsObserved,
         readingsStored: utilityReadingsStored + directiveReadingsObserved,
         statusesObserved: statuses.length,
-        statusesStored
+        statusesStored,
+        transactionsObserved: transactions.length,
+        transactionsStored
       };
       await this.meterArchiveRepository.completeSync(runId, new Date().toISOString(), counts);
       return counts;
@@ -1031,10 +1054,20 @@ export class SteamaOperationsService {
         lastCompletedAt: null,
         lastSuccessfulAt: null,
         lastErrorCode: null,
-        lastCounts: { readingsObserved: 0, readingsStored: 0, statusesObserved: 0, statusesStored: 0 },
+        lastCounts: {
+          readingsObserved: 0,
+          readingsStored: 0,
+          statusesObserved: 0,
+          statusesStored: 0,
+          transactionsObserved: 0,
+          transactionsStored: 0
+        },
         totalArchivedReadings: 0,
         earliestReadingAt: null,
-        latestReadingAt: null
+        latestReadingAt: null,
+        totalArchivedTransactions: 0,
+        earliestTransactionAt: null,
+        latestTransactionAt: null
       });
     }
     return this.meterArchiveRepository.getSyncStatus(this.meterArchiveSyncEnabled);
@@ -1496,7 +1529,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `revenue:${cacheKey}`;
+    const snapshotKey = `revenue-v2:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaRevenueAnalysis>(snapshotKey);
       if (retained) {
@@ -1525,15 +1558,34 @@ export class SteamaOperationsService {
     const energyMix = await this.getEnergyMix(period, forceRefresh, customRange);
     const rangeStartMs = new Date(energyMix.range.from).getTime();
     const rangeEndMs = new Date(energyMix.range.to).getTime();
-    const [usageChargesResult, paymentsResult] = await Promise.allSettled([
+    const [usageChargesResult, paymentsResult, overviewResult] = await Promise.allSettled([
       this.getProviderTransactions('UCH', rangeStartMs),
-      this.getProviderTransactions('PAY', rangeStartMs)
+      this.getProviderTransactions('PAY', rangeStartMs),
+      this.getOverview(false)
     ]);
     if (usageChargesResult.status === 'rejected') throw usageChargesResult.reason;
+    if (overviewResult.status === 'rejected') throw overviewResult.reason;
 
     const usageCharges = usageChargesResult.value;
     const payments = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
-    const collectionsAvailable = paymentsResult.status === 'fulfilled' && payments.length > 0;
+    const overview = overviewResult.value;
+    const roleByMeterNumber = new Map(
+      overview.meters.map((meter) => [canonicalMeterNumber(meter.meterNumber), meter.operationalRole])
+    );
+    const roleByCustomerId = new Map<string, MeterOperationalRole>();
+    for (const meter of overview.meters) {
+      if (meter.customerId) roleByCustomerId.set(meter.customerId, meter.operationalRole);
+    }
+    for (const customer of overview.customers) {
+      const roles = assignedMeterNumbers(customer)
+        .map((meterNumber) => roleByMeterNumber.get(canonicalMeterNumber(meterNumber)))
+        .filter((role): role is MeterOperationalRole => Boolean(role));
+      if (roles.length === 1) roleByCustomerId.set(customer.providerId, roles[0]);
+    }
+    const transactionRole = (transaction: SteamaCustomerTransaction): MeterOperationalRole =>
+      roleByCustomerId.get(transaction.customerId) ??
+      roleByMeterNumber.get(canonicalMeterNumber(transaction.meterNumber)) ??
+      'unknown';
     const buckets: SteamaRevenueBucket[] = energyMix.buckets.map((bucket) => ({
       key: bucket.key,
       label: bucket.label,
@@ -1546,7 +1598,14 @@ export class SteamaOperationsService {
       coveragePercent: bucket.coveragePercent,
       customerUsageChargeNgn: 0,
       usageChargeTransactions: 0,
-      recordedPaymentNgn: collectionsAvailable ? 0 : null,
+      sourceAccountChargeNgn: 0,
+      sourceAccountTransactions: 0,
+      solarSourceAccountChargeNgn: 0,
+      gridSourceAccountChargeNgn: 0,
+      generatorSourceAccountChargeNgn: 0,
+      unclassifiedUsageChargeNgn: 0,
+      unclassifiedUsageChargeTransactions: 0,
+      recordedPaymentNgn: null,
       paymentTransactions: 0,
       solarAttributedChargeNgn: 0,
       gridAttributedChargeNgn: 0,
@@ -1554,6 +1613,8 @@ export class SteamaOperationsService {
       energyValueNgn: 0
     }));
     const bucketsByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    let latestCustomerUsageChargeAt: string | null = null;
+    let latestSourceAccountChargeAt: string | null = null;
 
     for (const transaction of usageCharges) {
       const timestampMs = new Date(transaction.timestamp).getTime();
@@ -1561,8 +1622,27 @@ export class SteamaOperationsService {
       if (intervalStartMs < rangeStartMs || intervalStartMs >= rangeEndMs) continue;
       const bucket = bucketsByKey.get(new Date(startOfEnergyBucket(intervalStartMs, period)).toISOString());
       if (!bucket) continue;
-      bucket.customerUsageChargeNgn += -transaction.amount;
-      bucket.usageChargeTransactions += 1;
+      const role = transactionRole(transaction);
+      if (role === 'customer_load') {
+        bucket.customerUsageChargeNgn += -transaction.amount;
+        bucket.usageChargeTransactions += 1;
+        if (!latestCustomerUsageChargeAt || transaction.timestamp > latestCustomerUsageChargeAt) {
+          latestCustomerUsageChargeAt = transaction.timestamp;
+        }
+      } else if (role === 'solar_source' || role === 'grid_source' || role === 'generator_source') {
+        const amount = -transaction.amount;
+        bucket.sourceAccountChargeNgn += amount;
+        bucket.sourceAccountTransactions += 1;
+        if (role === 'solar_source') bucket.solarSourceAccountChargeNgn += amount;
+        if (role === 'grid_source') bucket.gridSourceAccountChargeNgn += amount;
+        if (role === 'generator_source') bucket.generatorSourceAccountChargeNgn += amount;
+        if (!latestSourceAccountChargeAt || transaction.timestamp > latestSourceAccountChargeAt) {
+          latestSourceAccountChargeAt = transaction.timestamp;
+        }
+      } else {
+        bucket.unclassifiedUsageChargeNgn += -transaction.amount;
+        bucket.unclassifiedUsageChargeTransactions += 1;
+      }
     }
 
     for (const transaction of payments) {
@@ -1570,12 +1650,18 @@ export class SteamaOperationsService {
       if (timestampMs < rangeStartMs || timestampMs >= rangeEndMs) continue;
       const bucket = bucketsByKey.get(new Date(startOfEnergyBucket(timestampMs, period)).toISOString());
       if (!bucket) continue;
+      if (transactionRole(transaction) !== 'customer_load') continue;
       bucket.recordedPaymentNgn = (bucket.recordedPaymentNgn ?? 0) + transaction.amount;
       bucket.paymentTransactions += 1;
     }
 
     for (const bucket of buckets) {
       bucket.customerUsageChargeNgn = roundMoney(Math.max(0, bucket.customerUsageChargeNgn));
+      bucket.sourceAccountChargeNgn = roundMoney(Math.max(0, bucket.sourceAccountChargeNgn));
+      bucket.solarSourceAccountChargeNgn = roundMoney(Math.max(0, bucket.solarSourceAccountChargeNgn));
+      bucket.gridSourceAccountChargeNgn = roundMoney(Math.max(0, bucket.gridSourceAccountChargeNgn));
+      bucket.generatorSourceAccountChargeNgn = roundMoney(Math.max(0, bucket.generatorSourceAccountChargeNgn));
+      bucket.unclassifiedUsageChargeNgn = roundMoney(Math.max(0, bucket.unclassifiedUsageChargeNgn));
       if (bucket.recordedPaymentNgn !== null) {
         bucket.recordedPaymentNgn = roundMoney(Math.max(0, bucket.recordedPaymentNgn));
       }
@@ -1596,6 +1682,13 @@ export class SteamaOperationsService {
     const customerUsageChargeNgn = roundMoney(
       buckets.reduce((sum, bucket) => sum + bucket.customerUsageChargeNgn, 0)
     );
+    const sourceAccountChargeNgn = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.sourceAccountChargeNgn, 0));
+    const solarSourceAccountChargeNgn = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.solarSourceAccountChargeNgn, 0));
+    const gridSourceAccountChargeNgn = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.gridSourceAccountChargeNgn, 0));
+    const generatorSourceAccountChargeNgn = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.generatorSourceAccountChargeNgn, 0));
+    const unclassifiedUsageChargeNgn = roundMoney(buckets.reduce((sum, bucket) => sum + bucket.unclassifiedUsageChargeNgn, 0));
+    const customerPaymentTransactions = buckets.reduce((sum, bucket) => sum + bucket.paymentTransactions, 0);
+    const collectionsAvailable = customerPaymentTransactions > 0;
     const recordedPaymentNgn = collectionsAvailable
       ? roundMoney(buckets.reduce((sum, bucket) => sum + (bucket.recordedPaymentNgn ?? 0), 0))
       : null;
@@ -1608,18 +1701,31 @@ export class SteamaOperationsService {
     const generatorAttributedChargeNgn = roundMoney(
       buckets.reduce((sum, bucket) => sum + bucket.generatorAttributedChargeNgn, 0)
     );
+    const allocatedCustomerChargeNgn = roundMoney(
+      solarAttributedChargeNgn + gridAttributedChargeNgn + generatorAttributedChargeNgn
+    );
+    const unallocatedCustomerChargeNgn = roundMoney(Math.max(0, customerUsageChargeNgn - allocatedCustomerChargeNgn));
+    const chargeAllocationCoveragePercent = customerUsageChargeNgn > 0
+      ? roundPercent((allocatedCustomerChargeNgn / customerUsageChargeNgn) * 100)
+      : null;
     const warnings = [
-      'Customer charges are provider-posted UCH ledger entries. Manual account-balance top-ups are not treated as cash receipts.',
+      'Customer charges include only provider-posted UCH entries assigned to customer-load meters. Source-account and unclassified entries are retained but excluded from customer revenue.',
       'Solar, grid and generator charge allocations are management estimates based on matched source-meter energy for each reporting bucket.',
-      'The grid-attributed amount is not a certified AEDC payable. Settlement still requires the AEDC invoice or tariff, losses, demand charges and taxes.',
+      'Actual AEDC, generator and solar operating costs are not configured. Energy values and source allocations are management estimates, not supplier payables.',
       `The configured retail rate of NGN ${this.retailTariffNgnPerKwh.toFixed(2)} per kWh is provisional until management confirms it.`,
       ...energyMix.warnings
     ];
     if (!collectionsAvailable) {
-      warnings.unshift('No PAY transaction was returned by SteamaCo for this period, so actual cash collections are unavailable.');
+      warnings.unshift('No customer-load PAY transaction was returned for this period, so actual cash collections are unavailable.');
     }
     if (paymentsResult.status === 'rejected') {
       warnings.unshift('The provider payment ledger could not be retrieved; collections remain unavailable.');
+    }
+    if (sourceAccountChargeNgn > 0) {
+      warnings.unshift(`${sourceAccountChargeNgn.toFixed(2)} NGN of source-account UCH debits was retained and excluded from customer revenue.`);
+    }
+    if (unclassifiedUsageChargeNgn > 0) {
+      warnings.unshift(`${unclassifiedUsageChargeNgn.toFixed(2)} NGN of UCH entries could not be mapped to a meter role and was excluded pending classification.`);
     }
 
     const result: SteamaRevenueAnalysis = {
@@ -1639,16 +1745,37 @@ export class SteamaOperationsService {
         effectiveFrom: this.tariffEffectiveFrom,
         source: 'MSM controlled configuration'
       },
+      costs: {
+        status: 'not_configured',
+        aedcSupplierPayableNgn: null,
+        generatorFuelCostNgn: null,
+        solarOperatingCostNgn: null
+      },
       summary: {
         customerUsageChargeNgn,
         usageChargeTransactions: buckets.reduce((sum, bucket) => sum + bucket.usageChargeTransactions, 0),
+        sourceAccountChargeNgn,
+        sourceAccountTransactions: buckets.reduce((sum, bucket) => sum + bucket.sourceAccountTransactions, 0),
+        solarSourceAccountChargeNgn,
+        gridSourceAccountChargeNgn,
+        generatorSourceAccountChargeNgn,
+        unclassifiedUsageChargeNgn,
+        unclassifiedUsageChargeTransactions: buckets.reduce(
+          (sum, bucket) => sum + bucket.unclassifiedUsageChargeTransactions,
+          0
+        ),
+        excludedUsageChargeNgn: roundMoney(sourceAccountChargeNgn + unclassifiedUsageChargeNgn),
+        latestCustomerUsageChargeAt,
+        latestSourceAccountChargeAt,
         recordedPaymentNgn,
-        paymentTransactions: buckets.reduce((sum, bucket) => sum + bucket.paymentTransactions, 0),
+        paymentTransactions: customerPaymentTransactions,
         collectionsAvailable,
         energyValueNgn: roundMoney(energyMix.summary.totalKwh * this.retailTariffNgnPerKwh),
         solarAttributedChargeNgn,
         gridAttributedChargeNgn,
         generatorAttributedChargeNgn,
+        unallocatedCustomerChargeNgn,
+        chargeAllocationCoveragePercent,
         solarEnergyValueNgn: roundMoney(energyMix.summary.solarKwh * this.retailTariffNgnPerKwh),
         gridEnergyValueNgn: roundMoney(energyMix.summary.gridKwh * this.retailTariffNgnPerKwh),
         generatorEnergyValueNgn: roundMoney(energyMix.summary.generatorKwh * this.retailTariffNgnPerKwh),
@@ -1671,7 +1798,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`revenue:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`revenue-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
@@ -2221,10 +2348,33 @@ export class SteamaOperationsService {
 
   private async getProviderTransactions(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {
     const requestKey = `transactions:${category}:${rangeStartMs}`;
-    return this.runSingleFlight(requestKey, () => this.fetchProviderTransactions(category, rangeStartMs));
+    return this.runSingleFlight(requestKey, async () => {
+      const rangeStart = new Date(rangeStartMs).toISOString();
+      const rangeEnd = new Date(Date.now() + HOUR_MS).toISOString();
+      const archived = this.meterArchiveRepository
+        ? await this.meterArchiveRepository.listTransactions(category, rangeStart, rangeEnd)
+        : [];
+      let providerTransactions: SteamaCustomerTransaction[] = [];
+      try {
+        providerTransactions = await this.fetchProviderTransactionsFromProvider(category, rangeStartMs);
+      } catch (error) {
+        if (archived.length > 0) return archived;
+        throw error;
+      }
+      if (!this.meterArchiveRepository) return providerTransactions;
+      await this.meterArchiveRepository.upsertTransactions(
+        providerTransactions.map((transaction) => ({ ...transaction, category }))
+      );
+      const merged = new Map<string, SteamaCustomerTransaction>();
+      for (const transaction of [...archived, ...providerTransactions]) {
+        const key = transaction.providerId || `${category}:${transaction.timestamp}:${transaction.customerId}:${transaction.amount}:${transaction.reference}`;
+        merged.set(key, transaction);
+      }
+      return Array.from(merged.values()).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    });
   }
 
-  private async fetchProviderTransactions(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {
+  private async fetchProviderTransactionsFromProvider(category: 'UCH' | 'PAY', rangeStartMs: number): Promise<SteamaCustomerTransaction[]> {
     const records: JsonObject[] = [];
     let page = 1;
     let pageCount = 1;

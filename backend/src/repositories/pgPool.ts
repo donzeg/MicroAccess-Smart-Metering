@@ -36,6 +36,10 @@ const MIGRATIONS: MigrationDefinition[] = [
   {
     id: '0005_operational_snapshots',
     fileName: 'operational_snapshots.postgres.ddl'
+  },
+  {
+    id: '0006_provider_transaction_archive',
+    fileName: 'provider_transaction_archive.postgres.ddl'
   }
 ];
 

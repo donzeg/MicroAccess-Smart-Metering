@@ -65,4 +65,27 @@ describe('InMemoryMeterArchiveRepository', () => {
       retrievedAt
     });
   });
+
+  it('retains normalized provider transactions idempotently for long-term reporting', async () => {
+    const repository = new InMemoryMeterArchiveRepository();
+    const transaction = {
+      providerId: 'uch-101',
+      timestamp: '2026-11-14T08:03:00.000Z',
+      category: 'UCH' as const,
+      amount: -1218,
+      accountBalance: -2436,
+      customerId: '1638023',
+      meterNumber: '0179250930999',
+      reference: 'provider-ledger-entry'
+    };
+
+    await repository.upsertTransactions([transaction]);
+    await repository.upsertTransactions([transaction]);
+
+    await expect(
+      repository.listTransactions('UCH', '2026-11-14T00:00:00.000Z', '2026-11-15T00:00:00.000Z')
+    ).resolves.toEqual([transaction]);
+    await expect(repository.latestTransactionAt('UCH')).resolves.toBe(transaction.timestamp);
+    await expect(repository.getSyncStatus(true)).resolves.toMatchObject({ totalArchivedTransactions: 1 });
+  });
 });

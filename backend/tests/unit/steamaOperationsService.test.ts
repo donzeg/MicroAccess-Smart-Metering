@@ -491,7 +491,7 @@ describe('SteamaOperationsService', () => {
     }
   });
 
-  it('allocates provider usage charges by matched source energy without inventing cash collections', async () => {
+  it('allocates only customer-load usage charges and excludes source-account debits', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-12T09:15:00Z'));
 
@@ -500,14 +500,25 @@ describe('SteamaOperationsService', () => {
         ({ path, query }: { path: string; query?: Record<string, unknown> }) => {
           if (path === '/meters/') {
             return Promise.resolve({
-              count: 2,
+              count: 3,
               results: [
-                { id: 1, reference: 'SOLAR', name: 'Solar source', offline_duration_status: 'Online' },
-                { id: 2, reference: 'GRID', name: 'Grid source', offline_duration_status: 'Online' }
+                { id: 1, reference: 'SOLAR', name: 'Solar source', customer: 10, offline_duration_status: 'Online' },
+                { id: 2, reference: 'GRID', name: 'Grid source', customer: 20, offline_duration_status: 'Online' },
+                { id: 3, reference: 'LOAD', name: 'Customer load', customer: 30, offline_duration_status: 'Online' }
               ]
             });
           }
-          if (path === '/customers/' || path === '/sites/') return Promise.resolve({ count: 0, results: [] });
+          if (path === '/customers/') {
+            return Promise.resolve({
+              count: 3,
+              results: [
+                { id: 10, first_name: 'Power Room', last_name: 'Solar meter' },
+                { id: 20, first_name: 'Power Room', last_name: 'Grid meter' },
+                { id: 30, first_name: 'Ground Floor - 01', last_name: 'Tenant' }
+              ]
+            });
+          }
+          if (path === '/sites/') return Promise.resolve({ count: 0, results: [] });
           if (path === '/meters/1/directives/') {
             return Promise.resolve({
               count: 1,
@@ -522,8 +533,11 @@ describe('SteamaOperationsService', () => {
           }
           if (path === '/transactions/' && query?.category === 'UCH') {
             return Promise.resolve({
-              count: 1,
-              results: [{ id: 10, timestamp: '2026-11-12T08:03:00Z', category: 'UCH', amount: -20300 }]
+              count: 2,
+              results: [
+                { id: 10, timestamp: '2026-11-12T08:03:00Z', category: 'UCH', amount: -20300, customer_id: 30 },
+                { id: 11, timestamp: '2026-11-12T08:04:00Z', category: 'UCH', amount: -500, customer_id: 10 }
+              ]
             });
           }
           if (path === '/transactions/' && query?.category === 'PAY') {
@@ -551,6 +565,13 @@ describe('SteamaOperationsService', () => {
         generatorAttributedChargeNgn: 0,
         solarEnergyValueNgn: 18270,
         gridEnergyValueNgn: 2030
+      });
+      expect(result.summary).toMatchObject({
+        sourceAccountChargeNgn: 500,
+        sourceAccountTransactions: 1,
+        solarSourceAccountChargeNgn: 500,
+        excludedUsageChargeNgn: 500,
+        unclassifiedUsageChargeNgn: 0
       });
       expect(result.warnings.join(' ')).toContain('actual cash collections are unavailable');
     } finally {

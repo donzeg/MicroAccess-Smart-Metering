@@ -33,11 +33,24 @@ export interface ArchivedUsageInterval {
   usageKwh: number;
 }
 
+export interface MeterArchiveTransactionInput {
+  providerId: string;
+  timestamp: string;
+  category: 'UCH' | 'PAY';
+  amount: number;
+  accountBalance: number | null;
+  customerId: string;
+  meterNumber: string;
+  reference: string;
+}
+
 export interface MeterArchiveSyncCounts {
   readingsObserved: number;
   readingsStored: number;
   statusesObserved: number;
   statusesStored: number;
+  transactionsObserved: number;
+  transactionsStored: number;
 }
 
 export interface MeterArchiveSyncStatus {
@@ -51,4 +64,7 @@ export interface MeterArchiveSyncStatus {
   totalArchivedReadings: number;
   earliestReadingAt: string | null;
   latestReadingAt: string | null;
+  totalArchivedTransactions: number;
+  earliestTransactionAt: string | null;
+  latestTransactionAt: string | null;
 }

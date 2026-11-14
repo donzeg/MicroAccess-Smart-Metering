@@ -64,7 +64,8 @@ describeWhenPostgres('Phase 1 PostgreSQL startup', () => {
         '0002_phase1_read_only_foundation',
         '0003_floor_tenancy_history',
         '0004_meter_reading_archive',
-        '0005_operational_snapshots'
+        '0005_operational_snapshots',
+        '0006_provider_transaction_archive'
       ]);
     } finally {
       await pool.end();

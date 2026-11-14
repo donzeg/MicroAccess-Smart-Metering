@@ -330,6 +330,13 @@ export interface RevenueBucket {
 	coveragePercent: number;
 	customerUsageChargeNgn: number;
 	usageChargeTransactions: number;
+	sourceAccountChargeNgn: number;
+	sourceAccountTransactions: number;
+	solarSourceAccountChargeNgn: number;
+	gridSourceAccountChargeNgn: number;
+	generatorSourceAccountChargeNgn: number;
+	unclassifiedUsageChargeNgn: number;
+	unclassifiedUsageChargeTransactions: number;
 	recordedPaymentNgn: number | null;
 	paymentTransactions: number;
 	solarAttributedChargeNgn: number;
@@ -355,9 +362,25 @@ export interface RevenueAnalysis {
 		effectiveFrom: string | null;
 		source: 'MSM controlled configuration';
 	};
+	costs: {
+		status: 'not_configured';
+		aedcSupplierPayableNgn: null;
+		generatorFuelCostNgn: null;
+		solarOperatingCostNgn: null;
+	};
 	summary: {
 		customerUsageChargeNgn: number;
 		usageChargeTransactions: number;
+		sourceAccountChargeNgn: number;
+		sourceAccountTransactions: number;
+		solarSourceAccountChargeNgn: number;
+		gridSourceAccountChargeNgn: number;
+		generatorSourceAccountChargeNgn: number;
+		unclassifiedUsageChargeNgn: number;
+		unclassifiedUsageChargeTransactions: number;
+		excludedUsageChargeNgn: number;
+		latestCustomerUsageChargeAt: string | null;
+		latestSourceAccountChargeAt: string | null;
 		recordedPaymentNgn: number | null;
 		paymentTransactions: number;
 		collectionsAvailable: boolean;
@@ -365,6 +388,8 @@ export interface RevenueAnalysis {
 		solarAttributedChargeNgn: number;
 		gridAttributedChargeNgn: number;
 		generatorAttributedChargeNgn: number;
+		unallocatedCustomerChargeNgn: number;
+		chargeAllocationCoveragePercent: number | null;
 		solarEnergyValueNgn: number;
 		gridEnergyValueNgn: number;
 		generatorEnergyValueNgn: number;
@@ -392,6 +417,7 @@ export interface CustomerDetail extends CustomerSummary {
 		category: string;
 		amount: number;
 		accountBalance: number | null;
+		customerId: string;
 		meterNumber: string;
 		reference: string;
 	}>;

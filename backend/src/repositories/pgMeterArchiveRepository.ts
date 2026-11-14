@@ -7,6 +7,7 @@ import type {
   ArchivedUsageInterval,
   MeterArchiveReadingInput,
   MeterArchiveStatusInput,
+  MeterArchiveTransactionInput,
   MeterArchiveSyncCounts,
   MeterArchiveSyncStatus
 } from '../types/meterArchive.js';
@@ -27,7 +28,9 @@ const emptyCounts = (): MeterArchiveSyncCounts => ({
   readingsObserved: 0,
   readingsStored: 0,
   statusesObserved: 0,
-  statusesStored: 0
+  statusesStored: 0,
+  transactionsObserved: 0,
+  transactionsStored: 0
 });
 
 export class PgMeterArchiveRepository implements MeterArchiveRepository {
@@ -220,6 +223,93 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
       : null;
   }
 
+  async upsertTransactions(transactions: MeterArchiveTransactionInput[]): Promise<number> {
+    let stored = 0;
+    const observedAt = new Date().toISOString();
+    for (const batch of chunks(transactions, CHUNK_SIZE)) {
+      if (batch.length === 0) continue;
+      const values: unknown[] = [];
+      const rows = batch.map((transaction, index) => {
+        const offset = index * 12;
+        const fallbackId = `${transaction.category}:${transaction.timestamp}:${transaction.customerId}:${transaction.amount}:${transaction.reference}`;
+        values.push(
+          randomUUID(),
+          PROVIDER,
+          transaction.providerId || fallbackId,
+          transaction.timestamp,
+          transaction.category,
+          transaction.amount,
+          transaction.accountBalance,
+          transaction.customerId || null,
+          transaction.meterNumber || null,
+          transaction.reference || null,
+          observedAt,
+          observedAt
+        );
+        return `(${Array.from({ length: 12 }, (_, valueIndex) => `$${offset + valueIndex + 1}`).join(', ')})`;
+      });
+      const result = await this.pool.query(
+        `INSERT INTO steama_transaction_archive (
+           id, provider, provider_transaction_id, occurred_at, category, amount,
+           account_balance, customer_provider_id, meter_number, reference,
+           first_observed_at, last_observed_at
+         ) VALUES ${rows.join(', ')}
+         ON CONFLICT (provider, provider_transaction_id) DO UPDATE SET
+           occurred_at = EXCLUDED.occurred_at,
+           category = EXCLUDED.category,
+           amount = EXCLUDED.amount,
+           account_balance = EXCLUDED.account_balance,
+           customer_provider_id = COALESCE(EXCLUDED.customer_provider_id, steama_transaction_archive.customer_provider_id),
+           meter_number = COALESCE(EXCLUDED.meter_number, steama_transaction_archive.meter_number),
+           reference = COALESCE(EXCLUDED.reference, steama_transaction_archive.reference),
+           last_observed_at = EXCLUDED.last_observed_at`,
+        values
+      );
+      stored += result.rowCount ?? 0;
+    }
+    return stored;
+  }
+
+  async listTransactions(category: 'UCH' | 'PAY', from: string, to: string): Promise<MeterArchiveTransactionInput[]> {
+    const result = await this.pool.query<{
+      provider_transaction_id: string;
+      occurred_at: Date;
+      category: 'UCH' | 'PAY';
+      amount: string;
+      account_balance: string | null;
+      customer_provider_id: string | null;
+      meter_number: string | null;
+      reference: string | null;
+    }>(
+      `SELECT provider_transaction_id, occurred_at, category, amount, account_balance,
+         customer_provider_id, meter_number, reference
+       FROM steama_transaction_archive
+       WHERE provider = $1 AND category = $2 AND occurred_at >= $3 AND occurred_at < $4
+       ORDER BY occurred_at ASC`,
+      [PROVIDER, category, from, to]
+    );
+    return result.rows.map((row) => ({
+      providerId: row.provider_transaction_id,
+      timestamp: row.occurred_at.toISOString(),
+      category: row.category,
+      amount: Number(row.amount),
+      accountBalance: row.account_balance === null ? null : Number(row.account_balance),
+      customerId: row.customer_provider_id ?? '',
+      meterNumber: row.meter_number ?? '',
+      reference: row.reference ?? ''
+    }));
+  }
+
+  async latestTransactionAt(category: 'UCH' | 'PAY'): Promise<string | null> {
+    const result = await this.pool.query<{ latest: Date | null }>(
+      `SELECT MAX(occurred_at) AS latest
+       FROM steama_transaction_archive
+       WHERE provider = $1 AND category = $2`,
+      [PROVIDER, category]
+    );
+    return result.rows[0]?.latest?.toISOString() ?? null;
+  }
+
   async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
     await this.pool.query(
       `INSERT INTO steama_operational_snapshots (provider, resource_key, payload, retrieved_at, updated_at)
@@ -256,6 +346,7 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
       `UPDATE meter_archive_sync_runs SET
          state = 'succeeded', completed_at = $2, readings_observed = $3,
          readings_stored = $4, statuses_observed = $5, statuses_stored = $6,
+         transactions_observed = $7, transactions_stored = $8,
          safe_error_code = NULL
        WHERE id = $1`,
       [
@@ -264,7 +355,9 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
         counts.readingsObserved,
         counts.readingsStored,
         counts.statusesObserved,
-        counts.statusesStored
+        counts.statusesStored,
+        counts.transactionsObserved,
+        counts.transactionsStored
       ]
     );
   }
@@ -279,7 +372,7 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
   }
 
   async getSyncStatus(enabled: boolean): Promise<MeterArchiveSyncStatus> {
-    const [runResult, successResult, readingResult] = await Promise.all([
+    const [runResult, successResult, readingResult, transactionResult] = await Promise.all([
       this.pool.query<{
         state: 'running' | 'succeeded' | 'failed';
         started_at: Date;
@@ -288,6 +381,8 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
         readings_stored: number;
         statuses_observed: number;
         statuses_stored: number;
+        transactions_observed: number;
+        transactions_stored: number;
         safe_error_code: string | null;
       }>(`SELECT * FROM meter_archive_sync_runs WHERE provider = $1 ORDER BY started_at DESC LIMIT 1`, [PROVIDER]),
       this.pool.query<{ completed_at: Date }>(
@@ -300,10 +395,16 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
         `SELECT COUNT(*)::text AS total, MIN(recorded_at) AS earliest, MAX(recorded_at) AS latest
          FROM meter_reading_archive WHERE provider = $1`,
         [PROVIDER]
+      ),
+      this.pool.query<{ total: string; earliest: Date | null; latest: Date | null }>(
+        `SELECT COUNT(*)::text AS total, MIN(occurred_at) AS earliest, MAX(occurred_at) AS latest
+         FROM steama_transaction_archive WHERE provider = $1`,
+        [PROVIDER]
       )
     ]);
     const run = runResult.rows[0];
     const reading = readingResult.rows[0];
+    const transaction = transactionResult.rows[0];
     return {
       enabled,
       state: run?.state ?? 'not_started',
@@ -316,12 +417,17 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
             readingsObserved: run.readings_observed,
             readingsStored: run.readings_stored,
             statusesObserved: run.statuses_observed,
-            statusesStored: run.statuses_stored
+            statusesStored: run.statuses_stored,
+            transactionsObserved: run.transactions_observed,
+            transactionsStored: run.transactions_stored
           }
         : emptyCounts(),
       totalArchivedReadings: Number(reading?.total ?? 0),
       earliestReadingAt: reading?.earliest?.toISOString() ?? null,
-      latestReadingAt: reading?.latest?.toISOString() ?? null
+      latestReadingAt: reading?.latest?.toISOString() ?? null,
+      totalArchivedTransactions: Number(transaction?.total ?? 0),
+      earliestTransactionAt: transaction?.earliest?.toISOString() ?? null,
+      latestTransactionAt: transaction?.latest?.toISOString() ?? null
     };
   }
 }
