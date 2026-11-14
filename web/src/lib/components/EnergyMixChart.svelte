@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { EnergyMixBucket, EnergyMixPeriod } from '#lib/types.js';
-	let { buckets, period }: { buckets: EnergyMixBucket[]; period: EnergyMixPeriod } = $props();
+	let { buckets, period, sharedSupplyLabel = 'AEDC grid' }: { buckets: EnergyMixBucket[]; period: EnergyMixPeriod; sharedSupplyLabel?: string } = $props();
 	let visibleBuckets = $derived(buckets.filter((bucket) => bucket.expectedIntervals > 0));
 	let maximum = $derived(Math.max(1, ...visibleBuckets.map((bucket) => bucket.totalKwh)));
 
@@ -15,11 +15,11 @@
 {#if visibleBuckets.length === 0}
 	<div class="empty">No energy intervals were returned for this period.</div>
 {:else}
-	<div class="chart" style={`--count: ${visibleBuckets.length}`} role="img" aria-label="Stacked solar, grid and configured generator energy contribution chart">
+	<div class="chart" style={`--count: ${visibleBuckets.length}`} role="img" aria-label={`Stacked solar, ${sharedSupplyLabel} and separately metered generator energy contribution chart`}>
 		{#each visibleBuckets as bucket (bucket.key)}
 			<div
 				class="column"
-				title={`${bucket.label}: ${bucket.solarKwh.toLocaleString()} kWh solar, ${bucket.gridKwh.toLocaleString()} kWh grid, ${bucket.generatorKwh.toLocaleString()} kWh generator, ${bucket.coveragePercent}% coverage`}
+				title={`${bucket.label}: ${bucket.solarKwh.toLocaleString()} kWh solar, ${bucket.gridKwh.toLocaleString()} kWh ${sharedSupplyLabel}, ${bucket.generatorKwh.toLocaleString()} kWh separately metered generator, ${bucket.coveragePercent}% coverage`}
 			>
 				<div class="value">{bucket.matchedIntervals === 0 ? '—' : bucket.totalKwh.toLocaleString()}</div>
 				<div class:missing={bucket.matchedIntervals === 0} class:zero={bucket.matchedIntervals > 0 && bucket.totalKwh === 0} class="bar-track">

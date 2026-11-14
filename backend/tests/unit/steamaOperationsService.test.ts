@@ -395,6 +395,11 @@ describe('SteamaOperationsService', () => {
         companionPercent: null,
         targetStatus: 'no_data'
       });
+      expect(result.sourceTopology).toMatchObject({
+        gridSourceIncludesGenerator: true,
+        generatorSeparatelyMetered: false,
+        sharedSupplyLabel: 'AEDC / generator supply'
+      });
       expect(result.sourceMeters).toHaveLength(2);
       expect(result.buckets.find((bucket) => bucket.totalKwh === 100)).toMatchObject({
         solarKwh: 90,
@@ -486,6 +491,12 @@ describe('SteamaOperationsService', () => {
         matchedActiveIntervals: 1,
         targetStatus: 'below_target'
       });
+      expect(result.sourceTopology).toMatchObject({
+        gridSourceIncludesGenerator: false,
+        generatorSeparatelyMetered: true,
+        sharedSupplyLabel: 'AEDC grid',
+        externalAedcReconciliation: 'ready_for_md_meter_comparison'
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -560,11 +571,22 @@ describe('SteamaOperationsService', () => {
         paymentTransactions: 0,
         collectionsAvailable: false,
         energyValueNgn: 20300,
+        accruedEnergyRevenueNgn: 20300,
+        solarAccruedRevenueNgn: 18270,
+        sharedSupplyAccruedRevenueNgn: 2030,
+        generatorAccruedRevenueNgn: 0,
         solarAttributedChargeNgn: 18270,
         gridAttributedChargeNgn: 2030,
         generatorAttributedChargeNgn: 0,
         solarEnergyValueNgn: 18270,
         gridEnergyValueNgn: 2030
+      });
+      expect(result.sourceTopology).toEqual({
+        gridSourceIncludesGenerator: true,
+        generatorSeparatelyMetered: false,
+        sharedSupplyLabel: 'AEDC / generator supply',
+        state: 'shared_aedc_generator_meter',
+        externalAedcReconciliation: 'unavailable_while_shared'
       });
       expect(result.summary).toMatchObject({
         sourceAccountChargeNgn: 500,

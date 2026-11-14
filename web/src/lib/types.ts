@@ -284,6 +284,14 @@ export interface EnergyMixPairComparison {
 	targetStatus: EnergyMixTargetStatus;
 }
 
+export interface SourceTopology {
+	gridSourceIncludesGenerator: boolean;
+	generatorSeparatelyMetered: boolean;
+	sharedSupplyLabel: 'AEDC / generator supply' | 'AEDC grid';
+	state: 'shared_aedc_generator_meter' | 'separate_aedc_and_generator_meters' | 'aedc_only';
+	externalAedcReconciliation: 'unavailable_while_shared' | 'ready_for_md_meter_comparison';
+}
+
 export interface EnergyMix {
 	dataSource: {
 		provider: 'SteamaCo';
@@ -295,6 +303,7 @@ export interface EnergyMix {
 	period: EnergyMixPeriod;
 	range: { from: string; to: string; timezone: 'Africa/Lagos' };
 	target: { solarMinimumPercent: number; solarMaximumPercent: number };
+	sourceTopology: SourceTopology;
 	summary: {
 		solarKwh: number;
 		gridKwh: number;
@@ -343,6 +352,10 @@ export interface RevenueBucket {
 	gridAttributedChargeNgn: number;
 	generatorAttributedChargeNgn: number;
 	energyValueNgn: number;
+	accruedEnergyRevenueNgn: number;
+	solarAccruedRevenueNgn: number;
+	sharedSupplyAccruedRevenueNgn: number;
+	generatorAccruedRevenueNgn: number;
 }
 
 export interface RevenueAnalysis {
@@ -362,6 +375,7 @@ export interface RevenueAnalysis {
 		effectiveFrom: string | null;
 		source: 'MSM controlled configuration';
 	};
+	sourceTopology: SourceTopology;
 	costs: {
 		status: 'not_configured';
 		aedcSupplierPayableNgn: null;
@@ -385,6 +399,10 @@ export interface RevenueAnalysis {
 		paymentTransactions: number;
 		collectionsAvailable: boolean;
 		energyValueNgn: number;
+		accruedEnergyRevenueNgn: number;
+		solarAccruedRevenueNgn: number;
+		sharedSupplyAccruedRevenueNgn: number;
+		generatorAccruedRevenueNgn: number;
 		solarAttributedChargeNgn: number;
 		gridAttributedChargeNgn: number;
 		generatorAttributedChargeNgn: number;

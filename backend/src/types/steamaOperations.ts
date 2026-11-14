@@ -279,6 +279,14 @@ export interface SteamaEnergyMixPairComparison {
   targetStatus: EnergyMixTargetStatus;
 }
 
+export interface SteamaSourceTopology {
+  gridSourceIncludesGenerator: boolean;
+  generatorSeparatelyMetered: boolean;
+  sharedSupplyLabel: 'AEDC / generator supply' | 'AEDC grid';
+  state: 'shared_aedc_generator_meter' | 'separate_aedc_and_generator_meters' | 'aedc_only';
+  externalAedcReconciliation: 'unavailable_while_shared' | 'ready_for_md_meter_comparison';
+}
+
 export interface SteamaEnergyMix {
   dataSource: {
     provider: 'SteamaCo';
@@ -297,6 +305,7 @@ export interface SteamaEnergyMix {
     solarMinimumPercent: number;
     solarMaximumPercent: number;
   };
+  sourceTopology: SteamaSourceTopology;
   summary: {
     solarKwh: number;
     gridKwh: number;
@@ -345,6 +354,10 @@ export interface SteamaRevenueBucket {
   gridAttributedChargeNgn: number;
   generatorAttributedChargeNgn: number;
   energyValueNgn: number;
+  accruedEnergyRevenueNgn: number;
+  solarAccruedRevenueNgn: number;
+  sharedSupplyAccruedRevenueNgn: number;
+  generatorAccruedRevenueNgn: number;
 }
 
 export interface SteamaRevenueAnalysis {
@@ -368,6 +381,7 @@ export interface SteamaRevenueAnalysis {
     effectiveFrom: string | null;
     source: 'MSM controlled configuration';
   };
+  sourceTopology: SteamaSourceTopology;
   costs: {
     status: 'not_configured';
     aedcSupplierPayableNgn: null;
@@ -391,6 +405,10 @@ export interface SteamaRevenueAnalysis {
     paymentTransactions: number;
     collectionsAvailable: boolean;
     energyValueNgn: number;
+    accruedEnergyRevenueNgn: number;
+    solarAccruedRevenueNgn: number;
+    sharedSupplyAccruedRevenueNgn: number;
+    generatorAccruedRevenueNgn: number;
     solarAttributedChargeNgn: number;
     gridAttributedChargeNgn: number;
     generatorAttributedChargeNgn: number;

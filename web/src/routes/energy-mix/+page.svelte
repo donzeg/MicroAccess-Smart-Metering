@@ -36,6 +36,8 @@
 	];
 	let result = $derived(data.energyMix);
 	let summary = $derived(result?.summary ?? null);
+	let sharedSupplyLabel = $derived(result?.sourceTopology.sharedSupplyLabel ?? 'AEDC grid');
+	let gridIncludesGenerator = $derived(result?.sourceTopology.gridSourceIncludesGenerator ?? false);
 	let missingIntervals = $derived(summary ? Math.max(0, summary.expectedIntervals - summary.matchedIntervals) : 0);
 	let solarSources = $derived(result?.sourceMeters.filter((meter) => meter.role === 'solar_source') ?? []);
 	let gridSources = $derived(result?.sourceMeters.filter((meter) => meter.role === 'grid_source') ?? []);
@@ -76,7 +78,9 @@
 	<PageHeader
 		eyebrow="Na-Aka Hub energy operations"
 		title="Energy mix"
-		description="See the overall source mix, then measure how much solar complemented grid and generator during each source's active periods."
+		description={gridIncludesGenerator
+			? 'Compare solar with the currently measured conventional supply. Until the dedicated generator meter is installed, the conventional meter combines AEDC and generator energy.'
+			: 'Compare solar, AEDC grid and separately metered generator energy across the selected reporting window.'}
 		{refreshHref}
 	/>
 
@@ -143,13 +147,13 @@
 					<div class="right-sources">
 						<div class="right-source">
 							<div class="flow-line incoming grid-line"><span></span></div>
-							<div class="source grid-source"><span class="icon"><UtilityPole size={23} /></span><p>Grid</p><strong>{formatNumber(summary.gridKwh)} kWh</strong><small>{summary.gridPercent.toFixed(1)}% of matched energy</small></div>
+							<div class="source grid-source"><span class="icon"><UtilityPole size={23} /></span><p>{sharedSupplyLabel}</p><strong>{formatNumber(summary.gridKwh)} kWh</strong><small>{summary.gridPercent.toFixed(1)}% of matched energy</small></div>
 						</div>
 						<div class="right-source">
 							<div class="flow-line incoming generator-line"><span></span></div>
 							<div class:awaiting={!summary.generatorConfigured} class="source generator-source"><span class="icon"><Fuel size={23} /></span><p>Generator</p>
 								{#if summary.generatorConfigured}<strong>{formatNumber(summary.generatorKwh)} kWh</strong><small>{summary.generatorPercent.toFixed(1)}% · {summary.generatorActiveIntervals ?? 0} active hourly intervals</small>
-								{:else}<strong>Awaiting meter</strong><small>Excluded from totals until connected</small>{/if}
+								{:else}<strong>{gridIncludesGenerator ? 'Included in shared meter' : 'Awaiting meter'}</strong><small>{gridIncludesGenerator ? 'Cannot be separated yet' : 'Excluded from totals until connected'}</small>{/if}
 							</div>
 						</div>
 					</div>
@@ -159,7 +163,7 @@
 			<aside class="performance-stack" aria-label="Pairwise solar performance">
 				<article class="panel comparison-card">
 					<div class="heading">
-						<div><p>Grid complement</p><h2>Solar vs grid</h2></div>
+						<div><p>Conventional supply complement</p><h2>Solar vs {sharedSupplyLabel}</h2></div>
 						{#if summary.solarVsGrid.available}<span class:good={summary.solarVsGrid.targetStatus === 'within_target'} class:warn={summary.solarVsGrid.targetStatus !== 'within_target'}>{targetLabel(summary.solarVsGrid.targetStatus)}</span>{/if}
 					</div>
 					{#if summary.solarVsGrid.available}
@@ -168,18 +172,18 @@
 								solarPercent={summary.solarVsGrid.solarPercent ?? 0}
 								minimum={result.target.solarMinimumPercent}
 								maximum={result.target.solarMaximumPercent}
-								label="Solar share vs grid"
-								comparison="grid-active matched energy"
+								label={`Solar share vs ${sharedSupplyLabel}`}
+								comparison="shared-supply active matched energy"
 								compact
 							/>
 							<div class="comparison-details">
 								<div><span class="solar-mark"></span><small>Solar</small><strong>{formatNumber(summary.solarVsGrid.solarKwh)} kWh</strong></div>
-								<div><span class="grid-mark"></span><small>Grid</small><strong>{formatNumber(summary.solarVsGrid.companionKwh)} kWh</strong></div>
-								<p>{summary.solarVsGrid.matchedActiveIntervals} of {summary.solarVsGrid.companionActiveIntervals} grid-active hours matched · {summary.solarVsGrid.coveragePercent.toFixed(1)}% coverage</p>
+								<div><span class="grid-mark"></span><small>{sharedSupplyLabel}</small><strong>{formatNumber(summary.solarVsGrid.companionKwh)} kWh</strong></div>
+								<p>{summary.solarVsGrid.matchedActiveIntervals} of {summary.solarVsGrid.companionActiveIntervals} shared-supply active hours matched · {summary.solarVsGrid.coveragePercent.toFixed(1)}% coverage</p>
 							</div>
 						</div>
 					{:else}
-						<div class="comparison-empty"><UtilityPole size={25} /><div><strong>No matched grid activity</strong><p>The percentage will appear when both solar and grid report during a grid-active interval.</p></div></div>
+						<div class="comparison-empty"><UtilityPole size={25} /><div><strong>No matched shared-supply activity</strong><p>The percentage will appear when both solar and the conventional-supply meter report in the same interval.</p></div></div>
 					{/if}
 				</article>
 
@@ -205,7 +209,7 @@
 							</div>
 						</div>
 					{:else if !summary.generatorConfigured}
-						<div class="comparison-empty awaiting"><Fuel size={25} /><div><strong>Awaiting generator meter</strong><p>No percentage is shown until a dedicated generator meter is installed and classified.</p></div></div>
+						<div class="comparison-empty awaiting"><Fuel size={25} /><div><strong>Awaiting dedicated generator meter</strong><p>{gridIncludesGenerator ? 'Generator energy is currently included in the shared AEDC/generator reading. A separate percentage becomes available after the new meter is installed.' : 'No percentage is shown until a dedicated generator meter is installed and classified.'}</p></div></div>
 					{:else}
 						<div class="comparison-empty awaiting"><Fuel size={25} /><div><strong>No matched generator activity</strong><p>The meter is configured, but no generator-active interval overlaps a solar reading in this window.</p></div></div>
 					{/if}
@@ -215,18 +219,18 @@
 
 		<section class="kpis">
 			<article><span class="kpi-icon solar"><SunMedium size={18} /></span><div><p>Solar energy</p><strong>{formatNumber(summary.solarKwh)} <small>kWh</small></strong><span>{summary.solarPercent.toFixed(1)}% contribution</span></div></article>
-			<article><span class="kpi-icon grid"><UtilityPole size={18} /></span><div><p>Grid energy</p><strong>{formatNumber(summary.gridKwh)} <small>kWh</small></strong><span>{summary.gridPercent.toFixed(1)}% dependency</span></div></article>
-			<article><span class="kpi-icon generator"><Fuel size={18} /></span><div><p>Generator energy</p><strong>{summary.generatorConfigured ? formatNumber(summary.generatorKwh) : 'Not metered'} {#if summary.generatorConfigured}<small>kWh</small>{/if}</strong><span>{summary.generatorConfigured ? `${summary.generatorPercent.toFixed(1)}% contribution` : 'Ready for future source meter'}</span></div></article>
+			<article><span class="kpi-icon grid"><UtilityPole size={18} /></span><div><p>{sharedSupplyLabel}</p><strong>{formatNumber(summary.gridKwh)} <small>kWh</small></strong><span>{summary.gridPercent.toFixed(1)}% contribution</span></div></article>
+			<article><span class="kpi-icon generator"><Fuel size={18} /></span><div><p>Generator energy</p><strong>{summary.generatorConfigured ? formatNumber(summary.generatorKwh) : gridIncludesGenerator ? 'Included above' : 'Not metered'} {#if summary.generatorConfigured}<small>kWh</small>{/if}</strong><span>{summary.generatorConfigured ? `${summary.generatorPercent.toFixed(1)}% contribution` : 'Dedicated source meter pending'}</span></div></article>
 			<article><span class="kpi-icon"><Activity size={18} /></span><div><p>Matched intervals</p><strong>{summary.matchedIntervals} <small>of {summary.expectedIntervals}</small></strong><span>All configured sources reported</span></div></article>
 			<article><span class="kpi-icon"><ShieldCheck size={18} /></span><div><p>Comparison coverage</p><strong>{summary.coveragePercent.toFixed(1)}<small>%</small></strong><span>Transparent data confidence</span></div></article>
 		</section>
 
 		<section class="panel chart-panel">
 			<div class="heading chart-heading">
-				<div><p>Energy contribution trend</p><h2>Solar, grid and generator usage</h2></div>
-				<div class="legend"><span><i class="solar-dot"></i>Solar</span><span><i class="grid-dot"></i>Grid</span><span><i class="generator-dot"></i>Generator</span><span><i class="missing-dot"></i>Missing data</span></div>
+				<div><p>Energy contribution trend</p><h2>Solar and measured supply usage</h2></div>
+				<div class="legend"><span><i class="solar-dot"></i>Solar</span><span><i class="grid-dot"></i>{sharedSupplyLabel}</span>{#if summary.generatorConfigured}<span><i class="generator-dot"></i>Generator</span>{/if}<span><i class="missing-dot"></i>Missing data</span></div>
 			</div>
-			<div class="chart-scroll"><EnergyMixChart buckets={result.buckets} period={result.period} /></div>
+			<div class="chart-scroll"><EnergyMixChart buckets={result.buckets} period={result.period} {sharedSupplyLabel} /></div>
 			<div class="chart-note"><Clock3 size={15} /><span>The number above each bar is total kWh; the percentage below it is matched-source coverage. A dash means data is missing, while a zero means the configured sources reported no consumption.</span></div>
 		</section>
 
@@ -239,12 +243,12 @@
 							<span class:solar-meter={meter.role === 'solar_source'} class:grid-meter={meter.role === 'grid_source'} class:generator-meter={meter.role === 'generator_source'}>
 								{#if meter.role === 'solar_source'}<SunMedium size={17} />{:else if meter.role === 'grid_source'}<UtilityPole size={17} />{:else}<Fuel size={17} />{/if}
 							</span>
-							<div><strong>{meter.name}</strong><small>{meter.meterNumber}</small></div>
+							<div><strong>{meter.name}</strong><small>{meter.role === 'grid_source' ? `${sharedSupplyLabel} · ` : ''}{meter.meterNumber}</small></div>
 							<div class="source-window"><strong>{meter.observedIntervals} readings</strong><small>{formatDateTime(meter.firstReadingAt)} – {formatDateTime(meter.latestReadingAt)}</small></div>
 						</a>
 					{/each}
 					{#if !summary.generatorConfigured}
-						<div class="pending-source"><span class="generator-meter"><Fuel size={17} /></span><div><strong>Generator source meter</strong><small>Not installed or classified yet</small></div><em>Awaiting meter</em></div>
+						<div class="pending-source"><span class="generator-meter"><Fuel size={17} /></span><div><strong>Dedicated generator source meter</strong><small>{gridIncludesGenerator ? 'Generator is currently included in the shared conventional meter' : 'Not installed or classified yet'}</small></div><em>Awaiting meter</em></div>
 					{/if}
 				</div>
 			</article>
@@ -252,7 +256,7 @@
 			<aside class="panel quality">
 				<div class="heading"><div><p>Data-quality boundary</p><h2>How to read the result</h2></div><Database size={18} /></div>
 				<div class="method"><span>1</span><p><strong>Use interval consumption.</strong> “Usage kWh” is the change in the cumulative meter register during the preceding interval.</p></div>
-				<div class="method"><span>2</span><p><strong>Match the right pair.</strong> Solar vs grid uses grid-active hours where both meters reported; solar vs generator uses generator-active hours where both meters reported.</p></div>
+				<div class="method"><span>2</span><p><strong>Respect the current wiring.</strong> Solar is separate, while the conventional meter currently combines AEDC and generator energy. The generator comparison activates only after its dedicated meter is installed.</p></div>
 				<div class="method"><span>3</span><p><strong>Do not manufacture zeroes.</strong> Missing readings remain missing. The future generator leg is excluded until its physical meter is connected and classified.</p></div>
 				<div class="method"><span>4</span><p><strong>Runtime is initially an estimate.</strong> Once installed, generator-active hourly intervals can estimate runtime; exact runtime needs engine start/stop telemetry or finer readings.</p></div>
 				<p class="range">Analysis window: <strong>{formatDateTime(result.range.from)}</strong> to <strong>{formatDateTime(result.range.to)}</strong> (Africa/Lagos).</p>

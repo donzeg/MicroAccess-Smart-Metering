@@ -39,7 +39,8 @@ import type {
   SteamaOperationsException,
   SteamaOperationsOverview,
   SteamaRevenueAnalysis,
-  SteamaRevenueBucket
+  SteamaRevenueBucket,
+  SteamaSourceTopology
 } from '../types/steamaOperations.js';
 
 export interface SteamaReadOnlyRequester {
@@ -79,6 +80,7 @@ interface CachedFloorAnalysis {
 export interface SteamaOperationsOptions {
   retailTariffNgnPerKwh?: number;
   tariffEffectiveFrom?: string | null;
+  gridSourceIncludesGenerator?: boolean;
   floorTenancyRepository?: FloorTenancyRepository;
   meterArchiveRepository?: MeterArchiveRepository;
   meterArchiveSyncEnabled?: boolean;
@@ -943,6 +945,7 @@ export class SteamaOperationsService {
   private readonly inFlightRequests = new Map<string, Promise<unknown>>();
   private readonly retailTariffNgnPerKwh: number;
   private readonly tariffEffectiveFrom: string | null;
+  private readonly gridSourceIncludesGenerator: boolean;
   private readonly floorTenancyRepository: FloorTenancyRepository;
   private readonly meterArchiveRepository: MeterArchiveRepository | null;
   private readonly meterArchiveSyncEnabled: boolean;
@@ -955,10 +958,28 @@ export class SteamaOperationsService {
   ) {
     this.retailTariffNgnPerKwh = options.retailTariffNgnPerKwh ?? 203;
     this.tariffEffectiveFrom = options.tariffEffectiveFrom ?? null;
+    this.gridSourceIncludesGenerator = options.gridSourceIncludesGenerator ?? true;
     this.floorTenancyRepository = options.floorTenancyRepository ?? new InMemoryFloorTenancyRepository();
     this.meterArchiveRepository = options.meterArchiveRepository ?? null;
     this.meterArchiveSyncEnabled = options.meterArchiveSyncEnabled ?? false;
     this.meterArchiveInitialBackfillDays = options.meterArchiveInitialBackfillDays ?? 3650;
+  }
+
+  private sourceTopology(generatorConfigured: boolean): SteamaSourceTopology {
+    const gridSourceIncludesGenerator = this.gridSourceIncludesGenerator && !generatorConfigured;
+    return {
+      gridSourceIncludesGenerator,
+      generatorSeparatelyMetered: generatorConfigured,
+      sharedSupplyLabel: gridSourceIncludesGenerator ? 'AEDC / generator supply' : 'AEDC grid',
+      state: generatorConfigured
+        ? 'separate_aedc_and_generator_meters'
+        : gridSourceIncludesGenerator
+          ? 'shared_aedc_generator_meter'
+          : 'aedc_only',
+      externalAedcReconciliation: gridSourceIncludesGenerator
+        ? 'unavailable_while_shared'
+        : 'ready_for_md_meter_comparison'
+    };
   }
 
   async synchronizeArchive(): Promise<MeterArchiveSyncCounts> {
@@ -1301,7 +1322,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `energy-mix:${cacheKey}`;
+    const snapshotKey = `energy-mix-v2:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaEnergyMix>(snapshotKey);
       if (retained && retained.value.summary.solarVsGrid && retained.value.summary.solarVsGenerator) {
@@ -1466,8 +1487,12 @@ export class SteamaOperationsService {
       warnings.push('No grid source meter is currently classified.');
     }
     if (!generatorConfigured) {
-      warnings.push('Generator contribution is not included because no generator source meter is currently classified.');
+      warnings.push(this.gridSourceIncludesGenerator
+        ? 'Generator energy is currently included in the shared AEDC/generator supply meter and cannot be separated until a dedicated generator meter is installed.'
+        : 'No dedicated generator source meter is currently classified.');
     }
+
+    const sourceTopology = this.sourceTopology(generatorConfigured);
 
     const result: SteamaEnergyMix = {
       dataSource: {
@@ -1487,6 +1512,7 @@ export class SteamaOperationsService {
         solarMinimumPercent: SOLAR_TARGET_MINIMUM,
         solarMaximumPercent: SOLAR_TARGET_MAXIMUM
       },
+      sourceTopology,
       summary: {
         solarKwh,
         gridKwh,
@@ -1514,7 +1540,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`energy-mix:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`energy-mix-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
@@ -1529,7 +1555,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `revenue-v2:${cacheKey}`;
+    const snapshotKey = `revenue-v3:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaRevenueAnalysis>(snapshotKey);
       if (retained) {
@@ -1610,7 +1636,11 @@ export class SteamaOperationsService {
       solarAttributedChargeNgn: 0,
       gridAttributedChargeNgn: 0,
       generatorAttributedChargeNgn: 0,
-      energyValueNgn: 0
+      energyValueNgn: 0,
+      accruedEnergyRevenueNgn: 0,
+      solarAccruedRevenueNgn: 0,
+      sharedSupplyAccruedRevenueNgn: 0,
+      generatorAccruedRevenueNgn: 0
     }));
     const bucketsByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
     let latestCustomerUsageChargeAt: string | null = null;
@@ -1666,6 +1696,10 @@ export class SteamaOperationsService {
         bucket.recordedPaymentNgn = roundMoney(Math.max(0, bucket.recordedPaymentNgn));
       }
       bucket.energyValueNgn = roundMoney(bucket.totalKwh * this.retailTariffNgnPerKwh);
+      bucket.accruedEnergyRevenueNgn = bucket.energyValueNgn;
+      bucket.solarAccruedRevenueNgn = roundMoney(bucket.solarKwh * this.retailTariffNgnPerKwh);
+      bucket.sharedSupplyAccruedRevenueNgn = roundMoney(bucket.gridKwh * this.retailTariffNgnPerKwh);
+      bucket.generatorAccruedRevenueNgn = roundMoney(bucket.generatorKwh * this.retailTariffNgnPerKwh);
       if (bucket.totalKwh > 0) {
         bucket.solarAttributedChargeNgn = roundMoney(
           bucket.customerUsageChargeNgn * (bucket.solarKwh / bucket.totalKwh)
@@ -1709,10 +1743,13 @@ export class SteamaOperationsService {
       ? roundPercent((allocatedCustomerChargeNgn / customerUsageChargeNgn) * 100)
       : null;
     const warnings = [
-      'Customer charges include only provider-posted UCH entries assigned to customer-load meters. Source-account and unclassified entries are retained but excluded from customer revenue.',
-      'Solar, grid and generator charge allocations are management estimates based on matched source-meter energy for each reporting bucket.',
-      'Actual AEDC, generator and solar operating costs are not configured. Energy values and source allocations are management estimates, not supplier payables.',
-      `The configured retail rate of NGN ${this.retailTariffNgnPerKwh.toFixed(2)} per kWh is provisional until management confirms it.`,
+      'Accrued energy revenue is measured consumption multiplied by the configured Band A retail tariff; it does not depend on when customers purchase credit or make payment.',
+      energyMix.sourceTopology.gridSourceIncludesGenerator
+        ? 'The current conventional-supply meter combines AEDC grid and generator energy. Its revenue value is shown as a shared supply until a dedicated generator meter is installed.'
+        : 'AEDC grid and generator energy are reported separately when both dedicated source meters are configured.',
+      'Customer UCH and PAY entries are retained as separate ledger and collections evidence; they do not drive accrued energy revenue.',
+      'Actual AEDC, generator and solar operating costs are not configured. Energy revenue is an operational valuation, not a supplier payable or profit figure.',
+      `The configured Band A retail rate is NGN ${this.retailTariffNgnPerKwh.toFixed(2)} per kWh. Historical effective-date treatment remains provisional until an effective date is configured.`,
       ...energyMix.warnings
     ];
     if (!collectionsAvailable) {
@@ -1745,6 +1782,7 @@ export class SteamaOperationsService {
         effectiveFrom: this.tariffEffectiveFrom,
         source: 'MSM controlled configuration'
       },
+      sourceTopology: energyMix.sourceTopology,
       costs: {
         status: 'not_configured',
         aedcSupplierPayableNgn: null,
@@ -1771,6 +1809,10 @@ export class SteamaOperationsService {
         paymentTransactions: customerPaymentTransactions,
         collectionsAvailable,
         energyValueNgn: roundMoney(energyMix.summary.totalKwh * this.retailTariffNgnPerKwh),
+        accruedEnergyRevenueNgn: roundMoney(energyMix.summary.totalKwh * this.retailTariffNgnPerKwh),
+        solarAccruedRevenueNgn: roundMoney(energyMix.summary.solarKwh * this.retailTariffNgnPerKwh),
+        sharedSupplyAccruedRevenueNgn: roundMoney(energyMix.summary.gridKwh * this.retailTariffNgnPerKwh),
+        generatorAccruedRevenueNgn: roundMoney(energyMix.summary.generatorKwh * this.retailTariffNgnPerKwh),
         solarAttributedChargeNgn,
         gridAttributedChargeNgn,
         generatorAttributedChargeNgn,
@@ -1798,7 +1840,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`revenue-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`revenue-v3:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 

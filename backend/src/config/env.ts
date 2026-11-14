@@ -49,6 +49,7 @@ export const env = {
   providerRateLimitRps: toNumber(process.env.PROVIDER_RATE_LIMIT_RPS, 10),
   retailTariffNgnPerKwh: toNumber(process.env.MSM_RETAIL_TARIFF_NGN_PER_KWH, 203),
   retailTariffEffectiveFrom: process.env.MSM_RETAIL_TARIFF_EFFECTIVE_FROM?.trim() || null,
+  gridSourceIncludesGenerator: toBoolean(process.env.MSM_GRID_SOURCE_INCLUDES_GENERATOR, true),
   steamaEnabled: toBoolean(process.env.STEAMA_ENABLED, false),
   steamaBaseUrl: process.env.STEAMA_BASE_URL ?? 'https://api.steama.co',
   steamaTokenPath: process.env.STEAMA_TOKEN_PATH ?? '/get-token/',
