@@ -14,7 +14,7 @@
 	let search = $state('');
 	let connectivity = $state<'all' | MeterConnectivity>('all');
 	let role = $state<'all' | MeterOperationalRole>('all');
-	let sortKey = $state<SortKey>('meter');
+	let sortKey = $state<SortKey>('connectivity');
 	let sortDirection = $state<SortDirection>('asc');
 	let meters = $derived(data.overview?.meters ?? []);
 	let filtered = $derived(meters.filter((meter) => {
@@ -25,15 +25,36 @@
 	const labels: Record<MeterOperationalRole, string> = { grid_source: 'Grid source', solar_source: 'Solar source', generator_source: 'Generator source', distribution_or_bulk: 'Distribution / bulk', customer_load: 'Customer load', unknown: 'Unclassified' };
 	const connectivityOrder: Record<MeterConnectivity, number> = { online: 0, offline: 1, never_online: 2, unknown: 3 };
 	const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+	const lastSeenTime = (meter: MeterSummary): number | null => {
+		if (!meter.lastReadingAt) return null;
+		const timestamp = new Date(meter.lastReadingAt).getTime();
+		return Number.isFinite(timestamp) ? timestamp : null;
+	};
 	const sortValue = (meter: MeterSummary, key: SortKey): string | number | null => {
 		if (key === 'meter') return meter.meterNumber;
 		if (key === 'role') return labels[meter.operationalRole];
 		if (key === 'customer') return meter.customerName;
 		if (key === 'connectivity') return connectivityOrder[meter.connectivity];
-		if (key === 'lastSeen') return meter.lastReadingAt ? new Date(meter.lastReadingAt).getTime() : null;
+		if (key === 'lastSeen') return lastSeenTime(meter);
 		return meter.latestReadingKwh;
 	};
 	const compareMeters = (left: MeterSummary, right: MeterSummary): number => {
+		if (sortKey === 'connectivity') {
+			const statusResult = connectivityOrder[left.connectivity] - connectivityOrder[right.connectivity];
+			if (statusResult !== 0) return sortDirection === 'asc' ? statusResult : -statusResult;
+
+			// Connectivity groups are always ordered by recency so the next meter shown
+			// after the online group is the one that most recently stopped reporting.
+			const leftLastSeen = lastSeenTime(left);
+			const rightLastSeen = lastSeenTime(right);
+			if (leftLastSeen === null && rightLastSeen !== null) return 1;
+			if (leftLastSeen !== null && rightLastSeen === null) return -1;
+			if (leftLastSeen !== null && rightLastSeen !== null && leftLastSeen !== rightLastSeen) {
+				return rightLastSeen - leftLastSeen;
+			}
+			return collator.compare(left.meterNumber, right.meterNumber);
+		}
+
 		const leftValue = sortValue(left, sortKey);
 		const rightValue = sortValue(right, sortKey);
 		if (leftValue === null && rightValue === null) return collator.compare(left.meterNumber, right.meterNumber);
@@ -49,7 +70,7 @@
 		if (sortKey === key) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
 		else {
 			sortKey = key;
-			sortDirection = 'asc';
+			sortDirection = key === 'lastSeen' || key === 'latestRegister' ? 'desc' : 'asc';
 		}
 	};
 	const ariaSort = (key: SortKey): 'none' | 'ascending' | 'descending' =>
