@@ -52,6 +52,9 @@ describe('InMemoryMeterArchiveRepository', () => {
       expect.objectContaining({ timestamp, readingKwh: 1200, usageKwh: 8 })
     ]);
     await expect(repository.latestUsageRecordedAt('1')).resolves.toBe(timestamp);
+    await expect(
+      repository.listRegisterReadings('1', '2026-06-02T00:00:00.000Z', '2026-06-03T00:00:00.000Z')
+    ).resolves.toEqual([{ timestamp, readingKwh: 1200, anomalous: false }]);
     await expect(repository.getSyncStatus(true)).resolves.toMatchObject({ totalArchivedReadings: 2 });
   });
 

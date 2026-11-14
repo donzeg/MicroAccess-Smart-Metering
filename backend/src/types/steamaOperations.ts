@@ -108,6 +108,7 @@ export interface SteamaFloorPositionUsage {
   meterCount: number;
   onlineMeterCount: number;
   usageKwh: number;
+  registerRecoveredKwh: number;
   attributedUsageKwh: number;
   unattributedUsageKwh: number;
   tenantAttributionCoveragePercent: number;
@@ -129,6 +130,7 @@ export interface SteamaFloorUsageSummary {
   meterCount: number;
   onlineMeterCount: number;
   usageKwh: number;
+  registerRecoveredKwh: number;
   attributedUsageKwh: number;
   unattributedUsageKwh: number;
   tenantAttributionCoveragePercent: number;
@@ -145,6 +147,7 @@ export interface SteamaFloorUsageBucket {
   from: string;
   to: string;
   totalKwh: number;
+  registerRecoveredKwh: number;
   floors: Array<{
     floorKey: SteamaFloorKey;
     usageKwh: number;
@@ -183,6 +186,8 @@ export interface SteamaFloorAnalysis {
     totalMeters: number;
     onlineMeters: number;
     totalUsageKwh: number;
+    registerRecoveredKwh: number;
+    registerRecoveryEvents: number;
     attributedUsageKwh: number;
     unattributedUsageKwh: number;
     tenantAttributionCoveragePercent: number;
@@ -247,6 +252,7 @@ export interface SteamaEnergyMixBucket {
   gridKwh: number;
   generatorKwh: number;
   totalKwh: number;
+  registerRecoveredKwh: number;
   solarPercent: number;
   gridPercent: number;
   generatorPercent: number;
@@ -261,6 +267,10 @@ export interface SteamaEnergyMixSourceMeter {
   name: string;
   role: 'solar_source' | 'grid_source' | 'generator_source';
   observedIntervals: number;
+  recordedUsageKwh: number;
+  registerRecoveredKwh: number;
+  registerRecoveryEvents: number;
+  ignoredRegisterDrops: number;
   firstReadingAt: string | null;
   latestReadingAt: string | null;
 }
@@ -311,6 +321,9 @@ export interface SteamaEnergyMix {
     gridKwh: number;
     generatorKwh: number;
     totalKwh: number;
+    registerRecoveredKwh: number;
+    registerRecoveryEvents: number;
+    ignoredRegisterDrops: number;
     solarPercent: number;
     gridPercent: number;
     generatorPercent: number;
@@ -338,6 +351,7 @@ export interface SteamaRevenueBucket {
   gridKwh: number;
   generatorKwh: number;
   totalKwh: number;
+  registerRecoveredKwh: number;
   coveragePercent: number;
   customerUsageChargeNgn: number;
   usageChargeTransactions: number;
@@ -421,6 +435,9 @@ export interface SteamaRevenueAnalysis {
     gridKwh: number;
     generatorKwh: number;
     totalKwh: number;
+    registerRecoveredKwh: number;
+    registerRecoveryEvents: number;
+    ignoredRegisterDrops: number;
     solarPercent: number;
     gridPercent: number;
     generatorPercent: number;

@@ -1,6 +1,7 @@
 import type { MeterArchiveRepository } from './meterArchiveRepository.js';
 import type {
   ArchivedMeterIdentity,
+  ArchivedRegisterReading,
   ArchivedUsageInterval,
   MeterArchiveReadingInput,
   MeterArchiveStatusInput,
@@ -94,6 +95,24 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
       });
     }
     return Array.from(byInterval.values()).sort((left, right) => left.intervalStart.localeCompare(right.intervalStart));
+  }
+
+  async listRegisterReadings(providerMeterId: string, from: string, to: string): Promise<ArchivedRegisterReading[]> {
+    const ordered = Array.from(this.readings.values())
+      .filter(
+        (reading) =>
+          reading.meterId === providerMeterId &&
+          reading.source === 'utility_reading' &&
+          reading.readingKwh !== null
+      )
+      .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    const predecessor = ordered.filter((reading) => reading.timestamp < from).at(-1);
+    const inRange = ordered.filter((reading) => reading.timestamp >= from && reading.timestamp < to);
+    return [...(predecessor ? [predecessor] : []), ...inRange].map((reading) => ({
+      timestamp: reading.timestamp,
+      readingKwh: reading.readingKwh!,
+      anomalous: reading.anomalous
+    }));
   }
 
   async latestUsageRecordedAt(providerMeterId: string): Promise<string | null> {

@@ -310,7 +310,7 @@ describe('SteamaOperationsService', () => {
     expect(customer.warnings.join(' ')).toContain('negative account balance');
   });
 
-  it('compares solar and grid only across matched hourly usage intervals', async () => {
+  it('totals each source independently while keeping pair comparisons time-matched', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-12T09:15:00Z'));
 
@@ -364,11 +364,11 @@ describe('SteamaOperationsService', () => {
       const result = await new SteamaOperationsService({ request }, 60_000).getEnergyMix('hourly');
 
       expect(result.summary).toMatchObject({
-        solarKwh: 90,
+        solarKwh: 140,
         gridKwh: 10,
-        totalKwh: 100,
-        solarPercent: 90,
-        gridPercent: 10,
+        totalKwh: 150,
+        solarPercent: 93.3,
+        gridPercent: 6.7,
         targetStatus: 'within_target',
         generatorConfigured: false,
         generatorKwh: 0,
@@ -406,7 +406,7 @@ describe('SteamaOperationsService', () => {
         gridKwh: 10,
         matchedIntervals: 1
       });
-      expect(result.summary.totalKwh).not.toBe(150);
+      expect(result.summary.totalKwh).toBe(150);
     } finally {
       vi.useRealTimers();
     }
@@ -596,6 +596,131 @@ describe('SteamaOperationsService', () => {
         unclassifiedUsageChargeNgn: 0
       });
       expect(result.warnings.join(' ')).toContain('actual cash collections are unavailable');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses cumulative source registers for YTD energy and Band A revenue when interval history is incomplete', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T23:32:00Z'));
+
+    try {
+      const archive = new InMemoryMeterArchiveRepository();
+      await archive.upsertReadings([
+        {
+          source: 'utility_reading',
+          intervalStart: '2026-11-06T09:00:00.000Z',
+          timestamp: '2026-11-06T10:00:00.000Z',
+          readingKwh: 30_000,
+          usageKwh: 1_000,
+          anomalous: false,
+          meterId: '1',
+          meterNumber: '0308000187515',
+          customerId: '10',
+          customerName: 'Power room solar source'
+        },
+        {
+          source: 'utility_reading',
+          intervalStart: '2026-11-14T21:00:00.000Z',
+          timestamp: '2026-11-14T22:00:00.000Z',
+          readingKwh: 31_881,
+          usageKwh: 1_881,
+          anomalous: false,
+          meterId: '1',
+          meterNumber: '0308000187515',
+          customerId: '10',
+          customerName: 'Power room solar source'
+        },
+        {
+          source: 'utility_reading',
+          intervalStart: '2026-11-06T09:00:00.000Z',
+          timestamp: '2026-11-06T10:00:00.000Z',
+          readingKwh: 17_000,
+          usageKwh: 500,
+          anomalous: false,
+          meterId: '2',
+          meterNumber: '0308000187523',
+          customerId: '11',
+          customerName: 'Power room grid source'
+        },
+        {
+          source: 'utility_reading',
+          intervalStart: '2026-11-14T21:00:00.000Z',
+          timestamp: '2026-11-14T22:00:00.000Z',
+          readingKwh: 17_969,
+          usageKwh: 969,
+          anomalous: false,
+          meterId: '2',
+          meterNumber: '0308000187523',
+          customerId: '11',
+          customerName: 'Power room grid source'
+        }
+      ]);
+      const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+        if (path === '/meters/') {
+          return Promise.resolve({
+            count: 2,
+            results: [
+              {
+                id: 1,
+                reference: '0308000187515',
+                name: 'Solar meter',
+                customer: 10,
+                customer_name: 'Power room solar source',
+                latest_meter_reading: 31_881,
+                latest_meter_reading_timestamp: '2026-11-14T22:00:00.000Z',
+                offline_duration_status: 'Online'
+              },
+              {
+                id: 2,
+                reference: '0308000187523',
+                name: 'GRID meter',
+                customer: 11,
+                customer_name: 'Power room grid source',
+                latest_meter_reading: 17_969,
+                latest_meter_reading_timestamp: '2026-11-14T22:00:00.000Z',
+                offline_duration_status: 'Online'
+              }
+            ]
+          });
+        }
+        if (path === '/customers/' || path === '/sites/' || path === '/transactions/') {
+          return Promise.resolve({ count: 0, results: [] });
+        }
+        throw new Error(`unexpected_path:${path}`);
+      });
+      const service = new SteamaOperationsService(
+        { request },
+        60_000,
+        {
+          retailTariffNgnPerKwh: 203,
+          meterArchiveRepository: archive,
+          meterRegisterBaselines: [
+            { meterNumber: '0308000187515', readingKwh: 0, effectiveAt: '2025-12-31T23:00:00.000Z' },
+            { meterNumber: '0308000187523', readingKwh: 0, effectiveAt: '2025-12-31T23:00:00.000Z' }
+          ]
+        }
+      );
+      const customRange = { from: '2026-01-01', to: '2026-11-14' };
+      const energy = await service.getEnergyMix('monthly', false, customRange);
+      const revenue = await service.getRevenueAnalysis('monthly', false, customRange);
+
+      expect(energy.summary).toMatchObject({
+        solarKwh: 31_881,
+        gridKwh: 17_969,
+        totalKwh: 49_850,
+        registerRecoveredKwh: 45_500,
+        registerRecoveryEvents: 2
+      });
+      expect(revenue.summary).toMatchObject({
+        solarKwh: 31_881,
+        gridKwh: 17_969,
+        totalKwh: 49_850,
+        accruedEnergyRevenueNgn: 10_119_550,
+        solarAccruedRevenueNgn: 6_471_843,
+        sharedSupplyAccruedRevenueNgn: 3_647_707
+      });
     } finally {
       vi.useRealTimers();
     }

@@ -33,6 +33,12 @@ export interface ArchivedUsageInterval {
   usageKwh: number;
 }
 
+export interface ArchivedRegisterReading {
+  timestamp: string;
+  readingKwh: number;
+  anomalous: boolean;
+}
+
 export interface MeterArchiveTransactionInput {
   providerId: string;
   timestamp: string;

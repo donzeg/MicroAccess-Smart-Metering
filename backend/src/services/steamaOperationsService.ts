@@ -4,6 +4,12 @@ import type { SteamaReadOnlyRequest } from './steamaReadOnlyClient.js';
 import { InMemoryFloorTenancyRepository } from '../repositories/inMemoryFloorTenancyRepository.js';
 import type { FloorTenancyRepository } from '../repositories/interfaces.js';
 import type { MeterArchiveRepository } from '../repositories/meterArchiveRepository.js';
+import {
+  recoverUsageFromRegister,
+  type MeterRegisterBaseline,
+  type ReconciledUsageInterval,
+  type RegisterUsageRecovery
+} from './registerUsageRecovery.js';
 import type {
   MeterArchiveReadingInput,
   MeterArchiveSyncCounts,
@@ -85,12 +91,23 @@ export interface SteamaOperationsOptions {
   meterArchiveRepository?: MeterArchiveRepository;
   meterArchiveSyncEnabled?: boolean;
   meterArchiveInitialBackfillDays?: number;
+  meterRegisterBaselines?: MeterRegisterBaseline[];
 }
 
 interface DirectiveReading {
   timestamp: string;
   intervalStart: string;
   usageKwh: number;
+}
+
+interface AuthoritativeDirectiveReading extends DirectiveReading {
+  recordedUsageKwh: number;
+  registerRecoveredKwh: number;
+}
+
+interface AuthoritativeMeterUsage extends Omit<RegisterUsageRecovery, 'intervals'> {
+  readings: AuthoritativeDirectiveReading[];
+  recordedIntervalKeys: Set<string>;
 }
 
 export interface EnergyMixDateRange {
@@ -696,6 +713,7 @@ const createEnergyBuckets = (
       gridKwh: 0,
       generatorKwh: 0,
       totalKwh: 0,
+      registerRecoveredKwh: 0,
       solarPercent: 0,
       gridPercent: 0,
       generatorPercent: 0,
@@ -846,6 +864,7 @@ const createFloorUsageBuckets = (
     from: bucket.from,
     to: bucket.to,
     totalKwh: 0,
+    registerRecoveredKwh: 0,
     floors: floorKeys.map((floorKey) => ({ floorKey, usageKwh: 0 }))
   }));
 };
@@ -950,6 +969,7 @@ export class SteamaOperationsService {
   private readonly meterArchiveRepository: MeterArchiveRepository | null;
   private readonly meterArchiveSyncEnabled: boolean;
   private readonly meterArchiveInitialBackfillDays: number;
+  private readonly meterRegisterBaselines: MeterRegisterBaseline[];
 
   constructor(
     private readonly client: SteamaReadOnlyRequester,
@@ -963,6 +983,17 @@ export class SteamaOperationsService {
     this.meterArchiveRepository = options.meterArchiveRepository ?? null;
     this.meterArchiveSyncEnabled = options.meterArchiveSyncEnabled ?? false;
     this.meterArchiveInitialBackfillDays = options.meterArchiveInitialBackfillDays ?? 3650;
+    this.meterRegisterBaselines = options.meterRegisterBaselines ?? [];
+  }
+
+  private registerBaselineFor(
+    meter: Pick<SteamaMeterSummary, 'providerId' | 'meterNumber'>
+  ): MeterRegisterBaseline | undefined {
+    const meterNumber = canonicalMeterNumber(meter.meterNumber);
+    return this.meterRegisterBaselines.find((baseline) =>
+      (baseline.providerId && baseline.providerId === meter.providerId) ||
+      (baseline.meterNumber && canonicalMeterNumber(baseline.meterNumber) === meterNumber)
+    );
   }
 
   private sourceTopology(generatorConfigured: boolean): SteamaSourceTopology {
@@ -1277,11 +1308,41 @@ export class SteamaOperationsService {
     const first = readings[0] ?? null;
     const latest = readings.at(-1) ?? null;
     const usageValues = readings.map((reading) => reading.usageKwh).filter((value): value is number => value !== null);
+    const baseline = this.registerBaselineFor(meter);
+    const registerValues = readings
+      .filter(
+        (reading): reading is SteamaMeterReadingPoint & { readingKwh: number } =>
+          reading.readingKwh !== null &&
+          Number.isFinite(reading.readingKwh) &&
+          reading.readingKwh >= 0 &&
+          !reading.anomalous
+      )
+      .map((reading) => ({ timestamp: reading.timestamp, readingKwh: reading.readingKwh }));
+    if (baseline && registerValues.length > 0 && baseline.effectiveAt <= registerValues[0].timestamp) {
+      registerValues.unshift({ timestamp: baseline.effectiveAt, readingKwh: baseline.readingKwh });
+    }
+    let registerAnchor = registerValues[0] ?? null;
+    let registerChangeKwh = 0;
+    let ignoredRegisterDrops = 0;
+    for (const reading of registerValues.slice(1)) {
+      if (!registerAnchor) break;
+      if (reading.readingKwh < registerAnchor.readingKwh - 0.005) {
+        ignoredRegisterDrops += 1;
+        continue;
+      }
+      if (reading.readingKwh > registerAnchor.readingKwh) {
+        registerChangeKwh += reading.readingKwh - registerAnchor.readingKwh;
+      }
+      registerAnchor = reading;
+    }
     const negativeValues = readings.some(
       (reading) => (reading.readingKwh !== null && reading.readingKwh < 0) || (reading.usageKwh !== null && reading.usageKwh < 0)
     );
     if (readings.length === 0) warnings.push('No reading was returned for this meter in the current provider window.');
     if (negativeValues) warnings.push('Negative meter data is present and must be reviewed before interpretation.');
+    if (ignoredRegisterDrops > 0) {
+      warnings.push(`${ignoredRegisterDrops} lower cumulative-register reading(s) were ignored pending reset or data-quality review.`);
+    }
 
     return {
       dataSource: {
@@ -1297,12 +1358,9 @@ export class SteamaOperationsService {
         readingCount: readings.length
       },
       summary: {
-        firstReadingKwh: first?.readingKwh ?? null,
-        latestReadingKwh: latest?.readingKwh ?? null,
-        registerChangeKwh:
-          first?.readingKwh !== null && first?.readingKwh !== undefined && latest?.readingKwh !== null && latest?.readingKwh !== undefined
-            ? latest.readingKwh - first.readingKwh
-            : null,
+        firstReadingKwh: registerValues[0]?.readingKwh ?? first?.readingKwh ?? null,
+        latestReadingKwh: registerAnchor?.readingKwh ?? latest?.readingKwh ?? null,
+        registerChangeKwh: registerValues.length > 1 ? roundEnergy(registerChangeKwh) : null,
         intervalUsageKwh: usageValues.length > 0 ? usageValues.reduce((sum, value) => sum + value, 0) : null,
         anomalyCount: readings.filter((reading) => reading.anomalous).length
       },
@@ -1322,7 +1380,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `energy-mix-v2:${cacheKey}`;
+    const snapshotKey = `energy-mix-v3:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaEnergyMix>(snapshotKey);
       if (retained && retained.value.summary.solarVsGrid && retained.value.summary.solarVsGenerator) {
@@ -1367,7 +1425,7 @@ export class SteamaOperationsService {
     const histories = await Promise.all(
       sourceMeters.map(async (meter) => ({
         meter,
-        readings: await this.getDirectiveMeterReadings(meter, rangeStartMs, rangeEndMs, forceRefresh)
+        usage: await this.getAuthoritativeMeterUsage(meter, rangeStartMs, rangeEndMs, forceRefresh)
       }))
     );
 
@@ -1376,16 +1434,38 @@ export class SteamaOperationsService {
       grid_source: new Map<string, number>(),
       generator_source: new Map<string, number>()
     };
+    const comparisonRoleIntervals = {
+      solar_source: new Map<string, number>(),
+      grid_source: new Map<string, number>(),
+      generator_source: new Map<string, number>()
+    };
+    const roleRecoveredIntervals = {
+      solar_source: new Map<string, number>(),
+      grid_source: new Map<string, number>(),
+      generator_source: new Map<string, number>()
+    };
     const sourceSummaries: SteamaEnergyMixSourceMeter[] = [];
 
     for (const history of histories) {
-      const meterIntervals = new Map<string, DirectiveReading>();
-      for (const reading of history.readings) {
+      const meterIntervals = new Map<string, AuthoritativeDirectiveReading>();
+      for (const reading of history.usage.readings) {
         meterIntervals.set(reading.intervalStart, reading);
       }
       for (const [intervalStart, reading] of meterIntervals) {
         const roleMap = roleIntervals[history.meter.operationalRole];
         roleMap.set(intervalStart, (roleMap.get(intervalStart) ?? 0) + reading.usageKwh);
+        const recoveredMap = roleRecoveredIntervals[history.meter.operationalRole];
+        recoveredMap.set(
+          intervalStart,
+          (recoveredMap.get(intervalStart) ?? 0) + reading.registerRecoveredKwh
+        );
+        if (history.usage.recordedIntervalKeys.has(intervalStart)) {
+          const comparisonMap = comparisonRoleIntervals[history.meter.operationalRole];
+          comparisonMap.set(
+            intervalStart,
+            (comparisonMap.get(intervalStart) ?? 0) + reading.recordedUsageKwh
+          );
+        }
       }
 
       const ordered = Array.from(meterIntervals.values()).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
@@ -1394,7 +1474,11 @@ export class SteamaOperationsService {
         meterNumber: history.meter.meterNumber,
         name: history.meter.name,
         role: history.meter.operationalRole,
-        observedIntervals: meterIntervals.size,
+        observedIntervals: history.usage.recordedIntervalKeys.size,
+        recordedUsageKwh: history.usage.recordedUsageKwh,
+        registerRecoveredKwh: history.usage.registerRecoveredKwh,
+        registerRecoveryEvents: history.usage.recoveryEvents.length,
+        ignoredRegisterDrops: history.usage.ignoredRegisterDrops,
         firstReadingAt: ordered[0]?.timestamp ?? null,
         latestReadingAt: ordered.at(-1)?.timestamp ?? null
       });
@@ -1405,39 +1489,58 @@ export class SteamaOperationsService {
     const solarConfigured = sourceMeters.some((meter) => meter.operationalRole === 'solar_source');
     const gridConfigured = sourceMeters.some((meter) => meter.operationalRole === 'grid_source');
     const generatorConfigured = sourceMeters.some((meter) => meter.operationalRole === 'generator_source');
-    const requiredRoleMaps = [roleIntervals.solar_source, roleIntervals.grid_source];
-    if (generatorConfigured) requiredRoleMaps.push(roleIntervals.generator_source);
-    const matchedIntervalKeys = Array.from(roleIntervals.solar_source.keys()).filter((key) =>
+    const requiredRoleMaps = [comparisonRoleIntervals.solar_source, comparisonRoleIntervals.grid_source];
+    if (generatorConfigured) requiredRoleMaps.push(comparisonRoleIntervals.generator_source);
+    const matchedIntervalKeys = Array.from(comparisonRoleIntervals.solar_source.keys()).filter((key) =>
       requiredRoleMaps.every((roleMap) => roleMap.has(key))
     );
 
-    let solarKwh = 0;
-    let gridKwh = 0;
-    let generatorKwh = 0;
-    let generatorActiveIntervals = 0;
+    const addRoleToBuckets = (
+      intervals: Map<string, number>,
+      recoveredIntervals: Map<string, number>,
+      role: 'solar_source' | 'grid_source' | 'generator_source'
+    ): number => {
+      let total = 0;
+      for (const [intervalKey, usageKwh] of intervals) {
+        const intervalMs = new Date(intervalKey).getTime();
+        if (intervalMs < rangeStartMs || intervalMs >= rangeEndMs) continue;
+        total += usageKwh;
+        const bucketKey = new Date(startOfEnergyBucket(intervalMs, period)).toISOString();
+        const bucket = bucketsByKey.get(bucketKey);
+        if (!bucket) continue;
+        if (role === 'solar_source') bucket.solarKwh += usageKwh;
+        if (role === 'grid_source') bucket.gridKwh += usageKwh;
+        if (role === 'generator_source') bucket.generatorKwh += usageKwh;
+        bucket.registerRecoveredKwh += recoveredIntervals.get(intervalKey) ?? 0;
+      }
+      return roundEnergy(total);
+    };
+    let solarKwh = addRoleToBuckets(roleIntervals.solar_source, roleRecoveredIntervals.solar_source, 'solar_source');
+    let gridKwh = addRoleToBuckets(roleIntervals.grid_source, roleRecoveredIntervals.grid_source, 'grid_source');
+    let generatorKwh = addRoleToBuckets(
+      roleIntervals.generator_source,
+      roleRecoveredIntervals.generator_source,
+      'generator_source'
+    );
     for (const intervalKey of matchedIntervalKeys) {
       const intervalMs = new Date(intervalKey).getTime();
       if (intervalMs < rangeStartMs || intervalMs >= rangeEndMs) continue;
-      const solar = roleIntervals.solar_source.get(intervalKey) ?? 0;
-      const grid = roleIntervals.grid_source.get(intervalKey) ?? 0;
-      const generator = roleIntervals.generator_source.get(intervalKey) ?? 0;
-      solarKwh += solar;
-      gridKwh += grid;
-      generatorKwh += generator;
-      if (generatorConfigured && generator > 0) generatorActiveIntervals += 1;
       const bucketKey = new Date(startOfEnergyBucket(intervalMs, period)).toISOString();
       const bucket = bucketsByKey.get(bucketKey);
-      if (!bucket) continue;
-      bucket.solarKwh += solar;
-      bucket.gridKwh += grid;
-      bucket.generatorKwh += generator;
-      bucket.matchedIntervals += 1;
+      if (bucket) bucket.matchedIntervals += 1;
     }
+    const generatorActiveIntervals = Array.from(comparisonRoleIntervals.generator_source.entries()).filter(
+      ([key, usageKwh]) => {
+        const intervalMs = new Date(key).getTime();
+        return intervalMs >= rangeStartMs && intervalMs < rangeEndMs && usageKwh > 0;
+      }
+    ).length;
 
     for (const bucket of buckets) {
       bucket.solarKwh = roundEnergy(bucket.solarKwh);
       bucket.gridKwh = roundEnergy(bucket.gridKwh);
       bucket.generatorKwh = roundEnergy(bucket.generatorKwh);
+      bucket.registerRecoveredKwh = roundEnergy(bucket.registerRecoveredKwh);
       bucket.totalKwh = roundEnergy(bucket.solarKwh + bucket.gridKwh + bucket.generatorKwh);
       bucket.solarPercent = bucket.totalKwh > 0 ? roundPercent((bucket.solarKwh / bucket.totalKwh) * 100) : 0;
       bucket.gridPercent = bucket.totalKwh > 0 ? roundPercent((bucket.gridKwh / bucket.totalKwh) * 100) : 0;
@@ -1457,15 +1560,15 @@ export class SteamaOperationsService {
     const gridPercent = totalKwh > 0 ? roundPercent((gridKwh / totalKwh) * 100) : 0;
     const generatorPercent = totalKwh > 0 ? roundPercent((generatorKwh / totalKwh) * 100) : 0;
     const solarVsGrid = buildPairComparison(
-      roleIntervals.solar_source,
-      roleIntervals.grid_source,
+      comparisonRoleIntervals.solar_source,
+      comparisonRoleIntervals.grid_source,
       solarConfigured && gridConfigured,
       rangeStartMs,
       rangeEndMs
     );
     const solarVsGenerator = buildPairComparison(
-      roleIntervals.solar_source,
-      roleIntervals.generator_source,
+      comparisonRoleIntervals.solar_source,
+      comparisonRoleIntervals.generator_source,
       solarConfigured && generatorConfigured,
       rangeStartMs,
       rangeEndMs
@@ -1475,11 +1578,41 @@ export class SteamaOperationsService {
       const timestamp = new Date(key).getTime();
       return timestamp >= rangeStartMs && timestamp < rangeEndMs;
     }).length;
+    const registerRecoveredKwh = roundEnergy(
+      sourceSummaries.reduce((sum, source) => sum + source.registerRecoveredKwh, 0)
+    );
+    const registerRecoveryEvents = sourceSummaries.reduce(
+      (sum, source) => sum + source.registerRecoveryEvents,
+      0
+    );
+    const ignoredRegisterDrops = sourceSummaries.reduce(
+      (sum, source) => sum + source.ignoredRegisterDrops,
+      0
+    );
+    const intervalExcessEvents = histories.reduce(
+      (sum, history) => sum + history.usage.intervalExcessEvents,
+      0
+    );
     const targetStatus = energyMixTargetStatus(totalKwh > 0 ? solarPercent : null);
     const warnings = [
-      'Contribution percentages use matched hourly intervals only, so a missing reading from a configured source cannot distort the comparison.',
-      'SteamaCo currently exposes a limited raw-message history; longer periods show only the data still available from the provider.'
+      'Overall energy totals use recorded interval consumption plus cumulative-register movement recovered after connectivity gaps.',
+      'Pairwise solar-complement percentages use only genuinely time-matched interval readings; recovered register jumps are excluded because their original hourly timing is unknown.'
     ];
+    if (registerRecoveredKwh > 0) {
+      warnings.push(
+        `${registerRecoveredKwh.toFixed(2)} kWh was recovered from ${registerRecoveryEvents} cumulative-register movement event(s) and posted when each higher reading arrived.`
+      );
+    }
+    if (ignoredRegisterDrops > 0) {
+      warnings.push(
+        `${ignoredRegisterDrops} lower cumulative-register reading(s) were ignored to prevent malformed or reset values from creating false energy increases.`
+      );
+    }
+    if (intervalExcessEvents > 0) {
+      warnings.push(
+        `${intervalExcessEvents} register segment(s) contained more interval usage than register movement; recorded intervals were retained and no negative recovery was applied.`
+      );
+    }
     if (!sourceMeters.some((meter) => meter.operationalRole === 'solar_source')) {
       warnings.push('No solar source meter is currently classified.');
     }
@@ -1518,6 +1651,9 @@ export class SteamaOperationsService {
         gridKwh,
         generatorKwh,
         totalKwh,
+        registerRecoveredKwh,
+        registerRecoveryEvents,
+        ignoredRegisterDrops,
         solarPercent,
         gridPercent,
         generatorPercent,
@@ -1540,7 +1676,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`energy-mix-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`energy-mix-v3:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
@@ -1555,7 +1691,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `revenue-v3:${cacheKey}`;
+    const snapshotKey = `revenue-v4:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaRevenueAnalysis>(snapshotKey);
       if (retained) {
@@ -1621,6 +1757,7 @@ export class SteamaOperationsService {
       gridKwh: bucket.gridKwh,
       generatorKwh: bucket.generatorKwh,
       totalKwh: bucket.totalKwh,
+      registerRecoveredKwh: bucket.registerRecoveredKwh,
       coveragePercent: bucket.coveragePercent,
       customerUsageChargeNgn: 0,
       usageChargeTransactions: 0,
@@ -1825,6 +1962,9 @@ export class SteamaOperationsService {
         gridKwh: energyMix.summary.gridKwh,
         generatorKwh: energyMix.summary.generatorKwh,
         totalKwh: energyMix.summary.totalKwh,
+        registerRecoveredKwh: energyMix.summary.registerRecoveredKwh,
+        registerRecoveryEvents: energyMix.summary.registerRecoveryEvents,
+        ignoredRegisterDrops: energyMix.summary.ignoredRegisterDrops,
         solarPercent: energyMix.summary.solarPercent,
         gridPercent: energyMix.summary.gridPercent,
         generatorPercent: energyMix.summary.generatorPercent,
@@ -1840,7 +1980,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`revenue-v3:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`revenue-v4:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
@@ -1855,7 +1995,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `floors:${cacheKey}`;
+    const snapshotKey = `floors-v2:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaFloorAnalysis>(snapshotKey);
       if (retained) {
@@ -1930,15 +2070,15 @@ export class SteamaOperationsService {
     const historyResults = await Promise.allSettled(
       meterRequests.map(async ({ meter }) => ({
         meterId: meter.providerId,
-        readings: await this.getDirectiveMeterReadings(meter, range.start, range.end, forceRefresh)
+        usage: await this.getAuthoritativeMeterUsage(meter, range.start, range.end, forceRefresh)
       }))
     );
-    const historiesByMeter = new Map<string, DirectiveReading[]>();
+    const historiesByMeter = new Map<string, AuthoritativeMeterUsage>();
     let unavailableMeterCount = 0;
     historyResults.forEach((result, index) => {
       const meterId = meterRequests[index]?.meter.providerId;
       if (!meterId) return;
-      if (result.status === 'fulfilled') historiesByMeter.set(meterId, result.value.readings);
+      if (result.status === 'fulfilled') historiesByMeter.set(meterId, result.value.usage);
       else unavailableMeterCount += 1;
     });
 
@@ -1948,26 +2088,39 @@ export class SteamaOperationsService {
     const positions: SteamaFloorPositionUsage[] = [];
 
     for (const { customer, customerMeters, identity } of positionInputs) {
-      const uniqueReadings: Array<DirectiveReading & { meterId: string }> = [];
+      const uniqueReadings: Array<
+        AuthoritativeDirectiveReading & { meterId: string; recordedInterval: boolean }
+      > = [];
+      let observedIntervalCount = 0;
       for (const meter of customerMeters) {
-        const meterIntervals = new Map<string, DirectiveReading>();
-        for (const reading of historiesByMeter.get(meter.providerId) ?? []) {
+        const meterUsage = historiesByMeter.get(meter.providerId);
+        const meterIntervals = new Map<string, AuthoritativeDirectiveReading>();
+        for (const reading of meterUsage?.readings ?? []) {
           meterIntervals.set(reading.intervalStart, reading);
         }
+        observedIntervalCount += meterUsage?.recordedIntervalKeys.size ?? 0;
         for (const reading of meterIntervals.values()) {
-          uniqueReadings.push({ ...reading, meterId: meter.providerId });
+          uniqueReadings.push({
+            ...reading,
+            meterId: meter.providerId,
+            recordedInterval: meterUsage?.recordedIntervalKeys.has(reading.intervalStart) ?? false
+          });
           const intervalMs = new Date(reading.intervalStart).getTime();
           const bucket = bucketsByKey.get(new Date(startOfEnergyBucket(intervalMs, period)).toISOString());
           const floorValue = bucket?.floors.find((entry) => entry.floorKey === identity.floorKey);
           if (bucket && floorValue) {
             floorValue.usageKwh += reading.usageKwh;
             bucket.totalKwh += reading.usageKwh;
+            bucket.registerRecoveredKwh += reading.registerRecoveredKwh;
           }
         }
       }
 
       uniqueReadings.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
       const usageKwh = roundEnergy(uniqueReadings.reduce((sum, reading) => sum + reading.usageKwh, 0));
+      const registerRecoveredKwh = roundEnergy(
+        uniqueReadings.reduce((sum, reading) => sum + reading.registerRecoveredKwh, 0)
+      );
       const expectedIntervals = expectedHours * customerMeters.length;
       const tenancyTimeline = tenancyTimelineByCustomer.get(customer.providerId);
       const attributionByKey = new Map<string, {
@@ -1978,6 +2131,26 @@ export class SteamaOperationsService {
         usageKwh: number;
         observedIntervals: number;
       }>();
+      const addAttribution = (
+        key: string,
+        details: {
+          tenantName: string;
+          source: 'provider_snapshot' | 'management_record' | 'unattributed';
+          effectiveFrom: string | null;
+          effectiveTo: string | null;
+        },
+        usage: number,
+        observed: boolean
+      ): void => {
+        const item = attributionByKey.get(key) ?? {
+          ...details,
+          usageKwh: 0,
+          observedIntervals: 0
+        };
+        item.usageKwh += usage;
+        if (observed) item.observedIntervals += 1;
+        attributionByKey.set(key, item);
+      };
       for (const reading of uniqueReadings) {
         const intervalMs = new Date(reading.intervalStart).getTime();
         const tenancy = tenancyTimeline?.tenancies.find((entry) => {
@@ -1985,18 +2158,32 @@ export class SteamaOperationsService {
           const toMs = entry.effectiveTo ? new Date(entry.effectiveTo).getTime() : Number.POSITIVE_INFINITY;
           return intervalMs >= fromMs && intervalMs < toMs;
         });
-        const key = tenancy?.id ?? 'unattributed';
-        const item = attributionByKey.get(key) ?? {
-          tenantName: tenancy?.tenantName ?? 'Historical tenant not recorded',
-          source: tenancy?.source ?? 'unattributed',
-          effectiveFrom: tenancy?.effectiveFrom ?? null,
-          effectiveTo: tenancy?.effectiveTo ?? null,
-          usageKwh: 0,
-          observedIntervals: 0
-        };
-        item.usageKwh += reading.usageKwh;
-        item.observedIntervals += 1;
-        attributionByKey.set(key, item);
+        if (reading.recordedInterval) {
+          addAttribution(
+            tenancy?.id ?? 'unattributed',
+            {
+              tenantName: tenancy?.tenantName ?? 'Historical tenant not recorded',
+              source: tenancy?.source ?? 'unattributed',
+              effectiveFrom: tenancy?.effectiveFrom ?? null,
+              effectiveTo: tenancy?.effectiveTo ?? null
+            },
+            reading.recordedUsageKwh,
+            true
+          );
+        }
+        if (reading.registerRecoveredKwh > 0) {
+          addAttribution(
+            'register-recovery-unattributed',
+            {
+              tenantName: 'Connectivity-gap energy (original hour unknown)',
+              source: 'unattributed',
+              effectiveFrom: null,
+              effectiveTo: null
+            },
+            reading.registerRecoveredKwh,
+            false
+          );
+        }
       }
       const tenantUsage = Array.from(attributionByKey.values()).map((item) => ({
         ...item,
@@ -2024,8 +2211,8 @@ export class SteamaOperationsService {
         tenantUsage,
         attributedUsageKwh,
         unattributedUsageKwh,
-        tenantAttributionCoveragePercent: uniqueReadings.length > 0
-          ? roundPercent((attributedIntervals / uniqueReadings.length) * 100)
+        tenantAttributionCoveragePercent: observedIntervalCount > 0
+          ? roundPercent((attributedIntervals / observedIntervalCount) * 100)
           : 0,
         occupancyStatus: tenantName === 'No tenant recorded'
           ? 'not_recorded'
@@ -2041,11 +2228,12 @@ export class SteamaOperationsService {
         meterCount: customerMeters.length,
         onlineMeterCount: customerMeters.filter((meter) => meter.connectivity === 'online').length,
         usageKwh,
+        registerRecoveredKwh,
         estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
-        observedIntervals: uniqueReadings.length,
+        observedIntervals: observedIntervalCount,
         expectedIntervals,
         coveragePercent: expectedIntervals > 0
-          ? roundPercent((uniqueReadings.length / expectedIntervals) * 100)
+          ? roundPercent((observedIntervalCount / expectedIntervals) * 100)
           : 0,
         firstReadingAt: uniqueReadings[0]?.timestamp ?? null,
         latestReadingAt: uniqueReadings.at(-1)?.timestamp ?? null
@@ -2054,6 +2242,7 @@ export class SteamaOperationsService {
 
     for (const bucket of buckets) {
       bucket.totalKwh = roundEnergy(bucket.totalKwh);
+      bucket.registerRecoveredKwh = roundEnergy(bucket.registerRecoveredKwh);
       for (const floor of bucket.floors) floor.usageKwh = roundEnergy(floor.usageKwh);
     }
 
@@ -2071,6 +2260,9 @@ export class SteamaOperationsService {
     ): SteamaFloorUsageSummary => {
       const floorPositions = positions.filter((position) => position.floorKey === key);
       const usageKwh = roundEnergy(floorPositions.reduce((sum, position) => sum + position.usageKwh, 0));
+      const registerRecoveredKwh = roundEnergy(
+        floorPositions.reduce((sum, position) => sum + position.registerRecoveredKwh, 0)
+      );
       const attributedUsageKwh = roundEnergy(
         floorPositions.reduce((sum, position) => sum + position.attributedUsageKwh, 0)
       );
@@ -2087,6 +2279,7 @@ export class SteamaOperationsService {
         meterCount: floorPositions.reduce((sum, position) => sum + position.meterCount, 0),
         onlineMeterCount: floorPositions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
         usageKwh,
+        registerRecoveredKwh,
         attributedUsageKwh,
         unattributedUsageKwh,
         tenantAttributionCoveragePercent: usageKwh > 0
@@ -2110,14 +2303,26 @@ export class SteamaOperationsService {
     const expectedIntervals = positions.reduce((sum, position) => sum + position.expectedIntervals, 0);
     const attributedUsageKwh = roundEnergy(positions.reduce((sum, position) => sum + position.attributedUsageKwh, 0));
     const unattributedUsageKwh = roundEnergy(Math.max(0, totalUsageKwh - attributedUsageKwh));
+    const registerRecoveredKwh = roundEnergy(
+      positions.reduce((sum, position) => sum + position.registerRecoveredKwh, 0)
+    );
+    const registerRecoveryEvents = Array.from(historiesByMeter.values()).reduce(
+      (sum, history) => sum + history.recoveryEvents.length,
+      0
+    );
     const warnings = [
-      'Floor consumption is calculated from interval usage on meters currently assigned to customer position accounts; cumulative register values are not summed.',
+      'Floor consumption uses recorded intervals plus cumulative-register movement recovered after connectivity gaps; recovered energy is kept unattributed when its original hour is unknown.',
       'The first name is treated as the permanent floor or unit position and the last name as the current tenant snapshot.',
       'Tenant history begins when MSM first observes a position or when management records an earlier effective date; earlier usage remains explicitly unattributed.',
       'Legacy position codes are interpreted using the observed Na-Aka Hub convention: G codes are Ground Floor, F0 codes are First Floor, and F2–F5 identify Floors 2–5.',
-      'SteamaCo currently exposes a limited raw-message history, so longer periods include only the readings still available from the provider.',
+      'SteamaCo exposes limited timestamped interval history; cumulative-register recovery preserves total energy but cannot reconstruct the original missing hours.',
       'Estimated Naira values use the provisional MSM retail rate and are not cash collections.'
     ];
+    if (registerRecoveredKwh > 0) {
+      warnings.unshift(
+        `${registerRecoveredKwh.toFixed(2)} kWh was recovered from ${registerRecoveryEvents} customer-meter register movement event(s).`
+      );
+    }
     if (positions.some((position) => position.floorKey === 'unclassified')) {
       warnings.push('Some customer positions could not be classified from their current names and remain in the Unclassified group.');
     }
@@ -2160,6 +2365,8 @@ export class SteamaOperationsService {
         totalMeters: positions.reduce((sum, position) => sum + position.meterCount, 0),
         onlineMeters: positions.reduce((sum, position) => sum + position.onlineMeterCount, 0),
         totalUsageKwh,
+        registerRecoveredKwh,
+        registerRecoveryEvents,
         attributedUsageKwh,
         unattributedUsageKwh,
         tenantAttributionCoveragePercent: totalUsageKwh > 0
@@ -2182,7 +2389,7 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`floors:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(`floors-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
     return result;
   }
 
@@ -2359,6 +2566,81 @@ export class SteamaOperationsService {
       return this.meterArchiveRepository.listUsageIntervals(providerId, from, to);
     }
     return providerReadings;
+  }
+
+  private async getAuthoritativeMeterUsage(
+    meter: Pick<
+      SteamaMeterSummary,
+      'providerId' | 'meterNumber' | 'customerId' | 'customerName' | 'latestReadingKwh' | 'lastReadingAt'
+    >,
+    rangeStartMs: number,
+    rangeEndMs: number,
+    forceRefresh: boolean
+  ): Promise<AuthoritativeMeterUsage> {
+    const recordedReadings = await this.getDirectiveMeterReadings(
+      meter,
+      rangeStartMs,
+      rangeEndMs,
+      forceRefresh
+    );
+    if (!this.meterArchiveRepository) {
+      return {
+        readings: recordedReadings.map((reading) => ({
+          ...reading,
+          recordedUsageKwh: reading.usageKwh,
+          registerRecoveredKwh: 0
+        })),
+        recordedUsageKwh: roundEnergy(recordedReadings.reduce((sum, reading) => sum + reading.usageKwh, 0)),
+        registerRecoveredKwh: 0,
+        recoveryEvents: [],
+        ignoredRegisterDrops: 0,
+        ignoredAnomalousReadings: 0,
+        intervalExcessEvents: 0,
+        recordedIntervalKeys: new Set(recordedReadings.map((reading) => reading.intervalStart))
+      };
+    }
+
+    const from = new Date(rangeStartMs).toISOString();
+    const to = new Date(rangeEndMs).toISOString();
+    const archivedRegisterReadings = await this.meterArchiveRepository.listRegisterReadings(
+      meter.providerId,
+      from,
+      to
+    );
+    const registerByTimestamp = new Map(
+      archivedRegisterReadings.map((reading) => [reading.timestamp, reading])
+    );
+    if (
+      meter.latestReadingKwh !== null &&
+      meter.lastReadingAt &&
+      Number.isFinite(new Date(meter.lastReadingAt).getTime()) &&
+      new Date(meter.lastReadingAt).getTime() < rangeEndMs
+    ) {
+      registerByTimestamp.set(meter.lastReadingAt, {
+        timestamp: meter.lastReadingAt,
+        readingKwh: meter.latestReadingKwh,
+        anomalous: false
+      });
+    }
+
+    const recovery = recoverUsageFromRegister({
+      intervals: recordedReadings,
+      registerReadings: Array.from(registerByTimestamp.values()),
+      baseline: this.registerBaselineFor(meter),
+      rangeStartMs,
+      rangeEndMs
+    });
+    return {
+      ...recovery,
+      recordedIntervalKeys: new Set(recordedReadings.map((reading) => reading.intervalStart)),
+      readings: recovery.intervals.map((reading: ReconciledUsageInterval) => ({
+        timestamp: reading.timestamp,
+        intervalStart: reading.intervalStart,
+        usageKwh: reading.usageKwh,
+        recordedUsageKwh: reading.recordedUsageKwh,
+        registerRecoveredKwh: reading.registerRecoveredKwh
+      }))
+    };
   }
 
   private toArchiveReadings(

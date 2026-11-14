@@ -1,5 +1,6 @@
 import type {
   ArchivedMeterIdentity,
+  ArchivedRegisterReading,
   ArchivedUsageInterval,
   MeterArchiveReadingInput,
   MeterArchiveStatusInput,
@@ -14,6 +15,7 @@ export interface MeterArchiveRepository {
   recordStatuses(statuses: MeterArchiveStatusInput[]): Promise<number>;
   listMeterReadings(providerMeterId: string, meterNumber?: string): Promise<SteamaMeterReadingPoint[]>;
   listUsageIntervals(providerMeterId: string, from: string, to: string): Promise<ArchivedUsageInterval[]>;
+  listRegisterReadings(providerMeterId: string, from: string, to: string): Promise<ArchivedRegisterReading[]>;
   latestUsageRecordedAt(providerMeterId: string): Promise<string | null>;
   findMeterIdentity(providerMeterId: string): Promise<ArchivedMeterIdentity | null>;
   upsertTransactions(transactions: MeterArchiveTransactionInput[]): Promise<number>;

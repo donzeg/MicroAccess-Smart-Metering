@@ -65,7 +65,7 @@
 		within_target: 'Within 90–95% target',
 		below_target: 'Below solar target',
 		above_target: 'Above target range',
-		no_data: 'No matched energy data'
+		no_data: 'No time-matched energy data'
 	})[status] ?? 'Target status unavailable';
 
 	const countdownLabel = (seconds: number): string =>
@@ -121,23 +121,23 @@
 	{#if data.error}
 		<section class="state">{data.error.message}</section>
 	{:else if result && summary}
-		{#if missingIntervals > 0}
+		{#if missingIntervals > 0 || summary.registerRecoveredKwh > 0}
 			<section class="coverage-alert" aria-label="Incomplete meter coverage warning">
 				<Activity size={20} />
-				<div><strong>{missingIntervals} hourly {missingIntervals === 1 ? 'interval is' : 'intervals are'} missing from this window</strong><span>The totals use {summary.matchedIntervals} matched intervals. Missing readings remain missing and are never counted as zero consumption.</span></div>
-				<b>{summary.coveragePercent.toFixed(1)}% coverage</b>
+				<div><strong>{missingIntervals} hourly detail {missingIntervals === 1 ? 'interval is' : 'intervals are'} unavailable in this window</strong><span>The energy totals include all recorded intervals plus {formatNumber(summary.registerRecoveredKwh)} kWh recovered from {summary.registerRecoveryEvents} cumulative-register {summary.registerRecoveryEvents === 1 ? 'movement' : 'movements'}. Pairwise complement percentages still use only time-matched readings.</span></div>
+				<b>{summary.coveragePercent.toFixed(1)}% interval coverage</b>
 			</section>
 		{/if}
 		<section class="hero-grid">
 			<article class="panel contribution">
 				<div class="heading">
 					<div><p>Contribution split</p><h2>What powered Na-Aka Hub</h2></div>
-					<span class="neutral">Overall matched mix</span>
+					<span class="neutral">Register-accounted mix</span>
 				</div>
 				<div class="energy-flow">
 					<div class="source solar-source">
 						<span class="icon"><SunMedium size={25} /></span>
-						<p>Solar</p><strong>{formatNumber(summary.solarKwh)} kWh</strong><small>{summary.solarPercent.toFixed(1)}% of matched energy</small>
+						<p>Solar</p><strong>{formatNumber(summary.solarKwh)} kWh</strong><small>{summary.solarPercent.toFixed(1)}% of accounted energy</small>
 					</div>
 					<div class="flow-line solar-line"><span></span></div>
 					<div class="building">
@@ -147,7 +147,7 @@
 					<div class="right-sources">
 						<div class="right-source">
 							<div class="flow-line incoming grid-line"><span></span></div>
-							<div class="source grid-source"><span class="icon"><UtilityPole size={23} /></span><p>{sharedSupplyLabel}</p><strong>{formatNumber(summary.gridKwh)} kWh</strong><small>{summary.gridPercent.toFixed(1)}% of matched energy</small></div>
+							<div class="source grid-source"><span class="icon"><UtilityPole size={23} /></span><p>{sharedSupplyLabel}</p><strong>{formatNumber(summary.gridKwh)} kWh</strong><small>{summary.gridPercent.toFixed(1)}% of accounted energy</small></div>
 						</div>
 						<div class="right-source">
 							<div class="flow-line incoming generator-line"><span></span></div>
@@ -255,9 +255,9 @@
 
 			<aside class="panel quality">
 				<div class="heading"><div><p>Data-quality boundary</p><h2>How to read the result</h2></div><Database size={18} /></div>
-				<div class="method"><span>1</span><p><strong>Use interval consumption.</strong> “Usage kWh” is the change in the cumulative meter register during the preceding interval.</p></div>
+				<div class="method"><span>1</span><p><strong>Account from the cumulative register.</strong> Recorded intervals provide the hourly detail; any higher register movement not already represented there is recovered once when connectivity returns.</p></div>
 				<div class="method"><span>2</span><p><strong>Respect the current wiring.</strong> Solar is separate, while the conventional meter currently combines AEDC and generator energy. The generator comparison activates only after its dedicated meter is installed.</p></div>
-				<div class="method"><span>3</span><p><strong>Do not manufacture zeroes.</strong> Missing readings remain missing. The future generator leg is excluded until its physical meter is connected and classified.</p></div>
+				<div class="method"><span>3</span><p><strong>Do not manufacture timing.</strong> Recovered energy increases totals and Naira valuation, but remains excluded from pairwise hourly complement percentages because its original consumption hours are unknown.</p></div>
 				<div class="method"><span>4</span><p><strong>Runtime is initially an estimate.</strong> Once installed, generator-active hourly intervals can estimate runtime; exact runtime needs engine start/stop telemetry or finer readings.</p></div>
 				<p class="range">Analysis window: <strong>{formatDateTime(result.range.from)}</strong> to <strong>{formatDateTime(result.range.to)}</strong> (Africa/Lagos).</p>
 			</aside>

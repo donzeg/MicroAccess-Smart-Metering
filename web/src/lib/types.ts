@@ -135,6 +135,7 @@ export interface FloorPositionUsage {
 	meterCount: number;
 	onlineMeterCount: number;
 	usageKwh: number;
+	registerRecoveredKwh: number;
 	attributedUsageKwh: number;
 	unattributedUsageKwh: number;
 	tenantAttributionCoveragePercent: number;
@@ -156,6 +157,7 @@ export interface FloorUsageSummary {
 	meterCount: number;
 	onlineMeterCount: number;
 	usageKwh: number;
+	registerRecoveredKwh: number;
 	attributedUsageKwh: number;
 	unattributedUsageKwh: number;
 	tenantAttributionCoveragePercent: number;
@@ -172,6 +174,7 @@ export interface FloorUsageBucket {
 	from: string;
 	to: string;
 	totalKwh: number;
+	registerRecoveredKwh: number;
 	floors: Array<{ floorKey: FloorKey; usageKwh: number }>;
 }
 
@@ -196,6 +199,8 @@ export interface FloorAnalysis {
 		totalMeters: number;
 		onlineMeters: number;
 		totalUsageKwh: number;
+		registerRecoveredKwh: number;
+		registerRecoveryEvents: number;
 		attributedUsageKwh: number;
 		unattributedUsageKwh: number;
 		tenantAttributionCoveragePercent: number;
@@ -252,6 +257,7 @@ export interface EnergyMixBucket {
 	gridKwh: number;
 	generatorKwh: number;
 	totalKwh: number;
+	registerRecoveredKwh: number;
 	solarPercent: number;
 	gridPercent: number;
 	generatorPercent: number;
@@ -266,6 +272,10 @@ export interface EnergyMixSourceMeter {
 	name: string;
 	role: 'solar_source' | 'grid_source' | 'generator_source';
 	observedIntervals: number;
+	recordedUsageKwh: number;
+	registerRecoveredKwh: number;
+	registerRecoveryEvents: number;
+	ignoredRegisterDrops: number;
 	firstReadingAt: string | null;
 	latestReadingAt: string | null;
 }
@@ -309,6 +319,9 @@ export interface EnergyMix {
 		gridKwh: number;
 		generatorKwh: number;
 		totalKwh: number;
+		registerRecoveredKwh: number;
+		registerRecoveryEvents: number;
+		ignoredRegisterDrops: number;
 		solarPercent: number;
 		gridPercent: number;
 		generatorPercent: number;
@@ -336,6 +349,7 @@ export interface RevenueBucket {
 	gridKwh: number;
 	generatorKwh: number;
 	totalKwh: number;
+	registerRecoveredKwh: number;
 	coveragePercent: number;
 	customerUsageChargeNgn: number;
 	usageChargeTransactions: number;
@@ -415,6 +429,9 @@ export interface RevenueAnalysis {
 		gridKwh: number;
 		generatorKwh: number;
 		totalKwh: number;
+		registerRecoveredKwh: number;
+		registerRecoveryEvents: number;
+		ignoredRegisterDrops: number;
 		solarPercent: number;
 		gridPercent: number;
 		generatorPercent: number;

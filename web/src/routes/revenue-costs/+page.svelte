@@ -106,16 +106,16 @@
 	{#if data.error}
 		<section class="state">{data.error.message}</section>
 	{:else if result && summary}
-		{#if missingIntervals > 0}
+		{#if missingIntervals > 0 || summary.registerRecoveredKwh > 0}
 			<section class="coverage-alert" aria-label="Incomplete source-meter coverage warning">
 				<Activity size={20} />
-				<div><strong>{missingIntervals} hourly {missingIntervals === 1 ? 'interval is' : 'intervals are'} missing from this window</strong><span>Energy valuation uses {summary.matchedIntervals} matched intervals. Missing readings stay missing and are never counted as zero.</span></div>
-				<b>{summary.coveragePercent.toFixed(1)}% energy coverage</b>
+				<div><strong>{missingIntervals} hourly detail {missingIntervals === 1 ? 'interval is' : 'intervals are'} unavailable in this window</strong><span>The valuation still includes {formatNumber(summary.registerRecoveredKwh)} kWh recovered from cumulative-register movement after connectivity returned. Recovery changes energy and revenue totals without inventing missing hourly timestamps.</span></div>
+				<b>{summary.coveragePercent.toFixed(1)}% interval coverage</b>
 			</section>
 		{/if}
 		<section class="truth-banner">
 			<ShieldAlert size={19} />
-			<div><strong>Revenue follows energy consumed—not the timing of customer credit purchases</strong><span>Every matched kWh is valued at the configured Band A rate of {formatNaira(result.tariff.retailNgnPerKwh)}. The current conventional meter combines AEDC and generator supply, so that value remains shared until the dedicated generator meter is installed. Collections and actual operating costs remain separate.</span></div>
+			<div><strong>Revenue follows energy consumed—not the timing of customer credit purchases</strong><span>Every register-accounted kWh is valued at the configured Band A rate of {formatNaira(result.tariff.retailNgnPerKwh)}. The current conventional meter combines AEDC and generator supply, so that value remains shared until the dedicated generator meter is installed. Collections and actual operating costs remain separate.</span></div>
 		</section>
 
 		<section class="kpis">
@@ -128,8 +128,8 @@
 
 		<section class="hero-grid">
 			<article class="panel allocation">
-				<div class="heading"><div><p>Energy-used revenue split</p><h2>What the consumed energy generated</h2></div><span>{summary.coveragePercent.toFixed(1)}% meter coverage</span></div>
-				<div class="allocation-total"><span>Accrued revenue from matched consumption</span><strong>{formatNaira(summary.accruedEnergyRevenueNgn)}</strong><small>{formatNumber(summary.totalKwh)} kWh valued at the configured Band A tariff, independent of when customer credit was purchased</small></div>
+				<div class="heading"><div><p>Energy-used revenue split</p><h2>What the consumed energy generated</h2></div><span>{summary.coveragePercent.toFixed(1)}% hourly detail</span></div>
+				<div class="allocation-total"><span>Accrued revenue from register-accounted consumption</span><strong>{formatNaira(summary.accruedEnergyRevenueNgn)}</strong><small>{formatNumber(summary.totalKwh)} kWh valued at the configured Band A tariff, including recovered connectivity-gap movement</small></div>
 				<div class="allocation-bar" aria-label="Accrued energy revenue by supply source">
 					{#if summary.accruedEnergyRevenueNgn > 0}
 						<span class="solar-segment" style={`width:${summary.solarPercent}%`}></span>
@@ -138,14 +138,14 @@
 					{/if}
 				</div>
 				<div class="allocation-legend">
-					<div><i class="solar-dot"></i><span>Solar energy revenue</span><strong>{formatNaira(summary.solarAccruedRevenueNgn)}</strong><small>{summary.solarPercent.toFixed(1)}% of matched energy</small></div>
-					<div><i class="grid-dot"></i><span>{sharedSupplyLabel} revenue</span><strong>{formatNaira(summary.sharedSupplyAccruedRevenueNgn)}</strong><small>{summary.gridPercent.toFixed(1)}% of matched energy</small></div>
-					{#if generatorSeparatelyMetered}<div><i class="generator-dot"></i><span>Generator energy revenue</span><strong>{formatNaira(summary.generatorAccruedRevenueNgn)}</strong><small>{summary.generatorPercent.toFixed(1)}% of matched energy</small></div>{/if}
+					<div><i class="solar-dot"></i><span>Solar energy revenue</span><strong>{formatNaira(summary.solarAccruedRevenueNgn)}</strong><small>{summary.solarPercent.toFixed(1)}% of accounted energy</small></div>
+					<div><i class="grid-dot"></i><span>{sharedSupplyLabel} revenue</span><strong>{formatNaira(summary.sharedSupplyAccruedRevenueNgn)}</strong><small>{summary.gridPercent.toFixed(1)}% of accounted energy</small></div>
+					{#if generatorSeparatelyMetered}<div><i class="generator-dot"></i><span>Generator energy revenue</span><strong>{formatNaira(summary.generatorAccruedRevenueNgn)}</strong><small>{summary.generatorPercent.toFixed(1)}% of accounted energy</small></div>{/if}
 				</div>
 			</article>
 
 			<aside class="panel valuation">
-				<div class="heading"><div><p>Consumption basis</p><h2>Matched energy at Band A rate</h2></div><Zap size={18} /></div>
+				<div class="heading"><div><p>Consumption basis</p><h2>Register-accounted energy at Band A rate</h2></div><Zap size={18} /></div>
 				<div class="value-ring" style={`--solar-share:${summary.solarPercent}%;--grid-share:${summary.solarPercent + summary.gridPercent}%`}><strong>{formatNumber(summary.totalKwh)} kWh</strong><span>{formatNaira(result.tariff.retailNgnPerKwh)} per consumed kWh</span></div>
 				<div class="value-row"><span><SunMedium size={15} />Solar consumption</span><strong>{formatNumber(summary.solarKwh)} kWh</strong></div>
 				<div class="value-row"><span><UtilityPole size={15} />{sharedSupplyLabel}</span><strong>{formatNumber(summary.gridKwh)} kWh</strong></div>
@@ -173,7 +173,7 @@
 
 			<aside class="panel method-panel">
 				<div class="heading"><div><p>Calculation controls</p><h2>Why management can trust the boundary</h2></div><Database size={18} /></div>
-				<div class="method"><span>1</span><p><strong>Revenue basis:</strong> accrued revenue is matched consumed energy multiplied by the configured Band A tariff.</p></div>
+				<div class="method"><span>1</span><p><strong>Revenue basis:</strong> accrued revenue is register-accounted consumed energy multiplied by the configured Band A tariff, including recovered movements after connectivity gaps.</p></div>
 				<div class="method"><span>2</span><p><strong>Current source split:</strong> solar is measured separately; AEDC and generator remain combined in the conventional-supply meter until the generator meter is installed.</p></div>
 				<div class="method"><span>3</span><p><strong>Collections boundary:</strong> customer credit purchases, payments and unused balances are tracked separately and never determine energy-used revenue.</p></div>
 				<div class="method"><span>4</span><p><strong>Profit boundary:</strong> profit becomes available only after actual AEDC billing, generator fuel/operations and solar costs are recorded.</p></div>

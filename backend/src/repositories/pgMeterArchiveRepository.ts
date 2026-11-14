@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import type { MeterArchiveRepository } from './meterArchiveRepository.js';
 import type {
   ArchivedMeterIdentity,
+  ArchivedRegisterReading,
   ArchivedUsageInterval,
   MeterArchiveReadingInput,
   MeterArchiveStatusInput,
@@ -195,6 +196,45 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
       timestamp: row.timestamp.toISOString(),
       intervalStart: row.interval_start.toISOString(),
       usageKwh: Number(row.usage_kwh)
+    }));
+  }
+
+  async listRegisterReadings(providerMeterId: string, from: string, to: string): Promise<ArchivedRegisterReading[]> {
+    const result = await this.pool.query<{
+      timestamp: Date;
+      reading_kwh: string;
+      anomalous: boolean;
+    }>(
+      `WITH predecessor AS (
+         SELECT recorded_at AS timestamp, reading_kwh, anomalous
+         FROM meter_reading_archive
+         WHERE provider = $1
+           AND provider_meter_id = $2
+           AND source_kind = 'utility_reading'
+           AND reading_kwh IS NOT NULL
+           AND recorded_at < $3
+         ORDER BY recorded_at DESC
+         LIMIT 1
+       ), in_range AS (
+         SELECT recorded_at AS timestamp, reading_kwh, anomalous
+         FROM meter_reading_archive
+         WHERE provider = $1
+           AND provider_meter_id = $2
+           AND source_kind = 'utility_reading'
+           AND reading_kwh IS NOT NULL
+           AND recorded_at >= $3
+           AND recorded_at < $4
+       )
+       SELECT timestamp, reading_kwh, anomalous FROM predecessor
+       UNION ALL
+       SELECT timestamp, reading_kwh, anomalous FROM in_range
+       ORDER BY timestamp ASC`,
+      [PROVIDER, providerMeterId, from, to]
+    );
+    return result.rows.map((row) => ({
+      timestamp: row.timestamp.toISOString(),
+      readingKwh: Number(row.reading_kwh),
+      anomalous: row.anomalous
     }));
   }
 

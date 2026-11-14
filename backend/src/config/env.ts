@@ -27,6 +27,42 @@ const toBoolean = (value: string | undefined, fallback: boolean): boolean => {
   return fallback;
 };
 
+const toMeterRegisterBaselines = (value: string | undefined): Array<{
+  providerId?: string;
+  meterNumber?: string;
+  readingKwh: number;
+  effectiveAt: string;
+}> => {
+  if (!value?.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) throw new Error('not_array');
+    return parsed.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('invalid_item');
+      const record = item as Record<string, unknown>;
+      const providerId = typeof record.providerId === 'string' ? record.providerId.trim() : '';
+      const meterNumber = typeof record.meterNumber === 'string' ? record.meterNumber.trim() : '';
+      const readingKwh = Number(record.readingKwh);
+      const effectiveAt = typeof record.effectiveAt === 'string' ? record.effectiveAt.trim() : '';
+      if (
+        (!providerId && !meterNumber) ||
+        !Number.isFinite(readingKwh) ||
+        readingKwh < 0 ||
+        !effectiveAt ||
+        !Number.isFinite(new Date(effectiveAt).getTime())
+      ) throw new Error('invalid_item');
+      return {
+        ...(providerId ? { providerId } : {}),
+        ...(meterNumber ? { meterNumber } : {}),
+        readingKwh,
+        effectiveAt: new Date(effectiveAt).toISOString()
+      };
+    });
+  } catch {
+    throw new Error('MSM_METER_REGISTER_BASELINES_JSON must be a valid array of meter register baselines.');
+  }
+};
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   operationMode:
@@ -50,6 +86,7 @@ export const env = {
   retailTariffNgnPerKwh: toNumber(process.env.MSM_RETAIL_TARIFF_NGN_PER_KWH, 203),
   retailTariffEffectiveFrom: process.env.MSM_RETAIL_TARIFF_EFFECTIVE_FROM?.trim() || null,
   gridSourceIncludesGenerator: toBoolean(process.env.MSM_GRID_SOURCE_INCLUDES_GENERATOR, true),
+  meterRegisterBaselines: toMeterRegisterBaselines(process.env.MSM_METER_REGISTER_BASELINES_JSON),
   steamaEnabled: toBoolean(process.env.STEAMA_ENABLED, false),
   steamaBaseUrl: process.env.STEAMA_BASE_URL ?? 'https://api.steama.co',
   steamaTokenPath: process.env.STEAMA_TOKEN_PATH ?? '/get-token/',
