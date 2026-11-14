@@ -16,6 +16,7 @@ import type {
 import type {
   CountSeriesItem,
   EnergyMixPeriod,
+  EnergyMixTargetStatus,
   MeterConnectivity,
   MeterFreshnessBucket,
   MeterOperationalRole,
@@ -24,6 +25,7 @@ import type {
   SteamaCustomerTransaction,
   SteamaEnergyMix,
   SteamaEnergyMixBucket,
+  SteamaEnergyMixPairComparison,
   SteamaEnergyMixSourceMeter,
   SteamaFloorAnalysis,
   SteamaFloorKey,
@@ -102,6 +104,73 @@ const SOLAR_TARGET_MINIMUM = 90;
 const SOLAR_TARGET_MAXIMUM = 95;
 const DIRECTIVE_PAGE_SIZE = 250;
 const ENERGY_MIX_CACHE_TTL_MS = 10 * 60_000;
+
+const energyMixTargetStatus = (solarPercent: number | null): EnergyMixTargetStatus => {
+  if (solarPercent === null) return 'no_data';
+  if (solarPercent < SOLAR_TARGET_MINIMUM) return 'below_target';
+  if (solarPercent > SOLAR_TARGET_MAXIMUM) return 'above_target';
+  return 'within_target';
+};
+
+const buildPairComparison = (
+  solarIntervals: Map<string, number>,
+  companionIntervals: Map<string, number>,
+  configured: boolean,
+  rangeStartMs: number,
+  rangeEndMs: number
+): SteamaEnergyMixPairComparison => {
+  if (!configured) {
+    return {
+      configured: false,
+      available: false,
+      solarKwh: 0,
+      companionKwh: 0,
+      totalKwh: 0,
+      solarPercent: null,
+      companionPercent: null,
+      matchedActiveIntervals: 0,
+      companionActiveIntervals: 0,
+      coveragePercent: 0,
+      targetStatus: 'no_data'
+    };
+  }
+
+  const inRange = (key: string): boolean => {
+    const timestamp = new Date(key).getTime();
+    return timestamp >= rangeStartMs && timestamp < rangeEndMs;
+  };
+  const activeKeys = Array.from(companionIntervals.entries())
+    .filter(([key, value]) => inRange(key) && value > 0)
+    .map(([key]) => key);
+  const matchedActiveKeys = activeKeys.filter((key) => solarIntervals.has(key));
+  let solarKwh = 0;
+  let companionKwh = 0;
+  for (const key of matchedActiveKeys) {
+    solarKwh += solarIntervals.get(key) ?? 0;
+    companionKwh += companionIntervals.get(key) ?? 0;
+  }
+  solarKwh = roundEnergy(solarKwh);
+  companionKwh = roundEnergy(companionKwh);
+  const totalKwh = roundEnergy(solarKwh + companionKwh);
+  const solarPercent = totalKwh > 0 ? roundPercent((solarKwh / totalKwh) * 100) : null;
+  const companionPercent = totalKwh > 0 ? roundPercent((companionKwh / totalKwh) * 100) : null;
+
+  return {
+    configured: true,
+    available: totalKwh > 0,
+    solarKwh,
+    companionKwh,
+    totalKwh,
+    solarPercent,
+    companionPercent,
+    matchedActiveIntervals: matchedActiveKeys.length,
+    companionActiveIntervals: activeKeys.length,
+    coveragePercent: activeKeys.length > 0
+      ? roundPercent((matchedActiveKeys.length / activeKeys.length) * 100)
+      : 0,
+    targetStatus: energyMixTargetStatus(solarPercent)
+  };
+};
 
 const FRESHNESS_LABELS: Record<MeterFreshnessBucket, string> = {
   online: 'Online now',
@@ -1202,7 +1271,7 @@ export class SteamaOperationsService {
     const snapshotKey = `energy-mix:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaEnergyMix>(snapshotKey);
-      if (retained) {
+      if (retained && retained.value.summary.solarVsGrid && retained.value.summary.solarVsGenerator) {
         if (this.snapshotIsStale(retained.retrievedAt, Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS))) {
           this.refreshInBackground(snapshotKey, () => this.buildEnergyMix(period, true, customRange));
         }
@@ -1279,6 +1348,8 @@ export class SteamaOperationsService {
 
     const buckets = createEnergyBuckets(period, rangeStartMs, rangeEndMs);
     const bucketsByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    const solarConfigured = sourceMeters.some((meter) => meter.operationalRole === 'solar_source');
+    const gridConfigured = sourceMeters.some((meter) => meter.operationalRole === 'grid_source');
     const generatorConfigured = sourceMeters.some((meter) => meter.operationalRole === 'generator_source');
     const requiredRoleMaps = [roleIntervals.solar_source, roleIntervals.grid_source];
     if (generatorConfigured) requiredRoleMaps.push(roleIntervals.generator_source);
@@ -1331,18 +1402,26 @@ export class SteamaOperationsService {
     const solarPercent = totalKwh > 0 ? roundPercent((solarKwh / totalKwh) * 100) : 0;
     const gridPercent = totalKwh > 0 ? roundPercent((gridKwh / totalKwh) * 100) : 0;
     const generatorPercent = totalKwh > 0 ? roundPercent((generatorKwh / totalKwh) * 100) : 0;
+    const solarVsGrid = buildPairComparison(
+      roleIntervals.solar_source,
+      roleIntervals.grid_source,
+      solarConfigured && gridConfigured,
+      rangeStartMs,
+      rangeEndMs
+    );
+    const solarVsGenerator = buildPairComparison(
+      roleIntervals.solar_source,
+      roleIntervals.generator_source,
+      solarConfigured && generatorConfigured,
+      rangeStartMs,
+      rangeEndMs
+    );
     const expectedIntervals = Math.max(0, Math.round((rangeEndMs - rangeStartMs) / HOUR_MS));
     const matchedIntervals = matchedIntervalKeys.filter((key) => {
       const timestamp = new Date(key).getTime();
       return timestamp >= rangeStartMs && timestamp < rangeEndMs;
     }).length;
-    const targetStatus = totalKwh === 0
-      ? 'no_data'
-      : solarPercent < SOLAR_TARGET_MINIMUM
-        ? 'below_target'
-        : solarPercent > SOLAR_TARGET_MAXIMUM
-          ? 'above_target'
-          : 'within_target';
+    const targetStatus = energyMixTargetStatus(totalKwh > 0 ? solarPercent : null);
     const warnings = [
       'Contribution percentages use matched hourly intervals only, so a missing reading from a configured source cannot distort the comparison.',
       'SteamaCo currently exposes a limited raw-message history; longer periods show only the data still available from the provider.'
@@ -1387,6 +1466,8 @@ export class SteamaOperationsService {
         generatorActiveIntervals: generatorConfigured ? generatorActiveIntervals : null,
         estimatedGeneratorRuntimeHours: generatorConfigured ? generatorActiveIntervals : null,
         targetStatus,
+        solarVsGrid,
+        solarVsGenerator,
         matchedIntervals,
         expectedIntervals,
         coveragePercent: expectedIntervals > 0 ? roundPercent((matchedIntervals / expectedIntervals) * 100) : 0

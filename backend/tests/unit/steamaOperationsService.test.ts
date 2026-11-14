@@ -375,6 +375,26 @@ describe('SteamaOperationsService', () => {
         matchedIntervals: 1,
         expectedIntervals: 24
       });
+      expect(result.summary.solarVsGrid).toMatchObject({
+        configured: true,
+        available: true,
+        solarKwh: 90,
+        companionKwh: 10,
+        totalKwh: 100,
+        solarPercent: 90,
+        companionPercent: 10,
+        matchedActiveIntervals: 1,
+        companionActiveIntervals: 1,
+        coveragePercent: 100,
+        targetStatus: 'within_target'
+      });
+      expect(result.summary.solarVsGenerator).toMatchObject({
+        configured: false,
+        available: false,
+        solarPercent: null,
+        companionPercent: null,
+        targetStatus: 'no_data'
+      });
       expect(result.sourceMeters).toHaveLength(2);
       expect(result.buckets.find((bucket) => bucket.totalKwh === 100)).toMatchObject({
         solarKwh: 90,
@@ -405,10 +425,17 @@ describe('SteamaOperationsService', () => {
         }
         if (path === '/customers/' || path === '/sites/') return Promise.resolve({ count: 0, results: [] });
         if (path.match(/^\/meters\/[123]\/directives\/$/)) {
-          const usage = path.includes('/1/') ? 90 : 5;
+          const usageByMeter = path.includes('/1/')
+            ? [90, 60]
+            : path.includes('/2/')
+              ? [10, 0]
+              : [0, 40];
           return Promise.resolve({
-            count: 1,
-            results: [{ timestamp: '2026-11-10T08:00:00Z', data: JSON.stringify({ usage_amount: usage }) }]
+            count: 2,
+            results: [
+              { timestamp: '2026-11-10T08:00:00Z', data: JSON.stringify({ usage_amount: usageByMeter[0] }) },
+              { timestamp: '2026-11-10T09:00:00Z', data: JSON.stringify({ usage_amount: usageByMeter[1] }) }
+            ]
           });
         }
         throw new Error(`unexpected_path:${path}`);
@@ -427,18 +454,37 @@ describe('SteamaOperationsService', () => {
       });
       expect(result.buckets).toHaveLength(1);
       expect(result.summary).toMatchObject({
-        solarKwh: 90,
-        gridKwh: 5,
-        generatorKwh: 5,
-        totalKwh: 100,
-        solarPercent: 90,
+        solarKwh: 150,
+        gridKwh: 10,
+        generatorKwh: 40,
+        totalKwh: 200,
+        solarPercent: 75,
         gridPercent: 5,
-        generatorPercent: 5,
+        generatorPercent: 20,
         generatorConfigured: true,
         generatorActiveIntervals: 1,
         estimatedGeneratorRuntimeHours: 1,
-        matchedIntervals: 1,
+        matchedIntervals: 2,
         expectedIntervals: 24
+      });
+      expect(result.summary.solarVsGrid).toMatchObject({
+        available: true,
+        solarKwh: 90,
+        companionKwh: 10,
+        solarPercent: 90,
+        companionPercent: 10,
+        matchedActiveIntervals: 1,
+        targetStatus: 'within_target'
+      });
+      expect(result.summary.solarVsGenerator).toMatchObject({
+        configured: true,
+        available: true,
+        solarKwh: 60,
+        companionKwh: 40,
+        solarPercent: 60,
+        companionPercent: 40,
+        matchedActiveIntervals: 1,
+        targetStatus: 'below_target'
       });
     } finally {
       vi.useRealTimers();

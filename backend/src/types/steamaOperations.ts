@@ -265,6 +265,20 @@ export interface SteamaEnergyMixSourceMeter {
   latestReadingAt: string | null;
 }
 
+export interface SteamaEnergyMixPairComparison {
+  configured: boolean;
+  available: boolean;
+  solarKwh: number;
+  companionKwh: number;
+  totalKwh: number;
+  solarPercent: number | null;
+  companionPercent: number | null;
+  matchedActiveIntervals: number;
+  companionActiveIntervals: number;
+  coveragePercent: number;
+  targetStatus: EnergyMixTargetStatus;
+}
+
 export interface SteamaEnergyMix {
   dataSource: {
     provider: 'SteamaCo';
@@ -295,6 +309,8 @@ export interface SteamaEnergyMix {
     generatorActiveIntervals: number | null;
     estimatedGeneratorRuntimeHours: number | null;
     targetStatus: EnergyMixTargetStatus;
+    solarVsGrid: SteamaEnergyMixPairComparison;
+    solarVsGenerator: SteamaEnergyMixPairComparison;
     matchedIntervals: number;
     expectedIntervals: number;
     coveragePercent: number;

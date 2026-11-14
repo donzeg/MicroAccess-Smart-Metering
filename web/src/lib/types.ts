@@ -270,6 +270,20 @@ export interface EnergyMixSourceMeter {
 	latestReadingAt: string | null;
 }
 
+export interface EnergyMixPairComparison {
+	configured: boolean;
+	available: boolean;
+	solarKwh: number;
+	companionKwh: number;
+	totalKwh: number;
+	solarPercent: number | null;
+	companionPercent: number | null;
+	matchedActiveIntervals: number;
+	companionActiveIntervals: number;
+	coveragePercent: number;
+	targetStatus: EnergyMixTargetStatus;
+}
+
 export interface EnergyMix {
 	dataSource: {
 		provider: 'SteamaCo';
@@ -293,6 +307,8 @@ export interface EnergyMix {
 		generatorActiveIntervals: number | null;
 		estimatedGeneratorRuntimeHours: number | null;
 		targetStatus: EnergyMixTargetStatus;
+		solarVsGrid: EnergyMixPairComparison;
+		solarVsGenerator: EnergyMixPairComparison;
 		matchedIntervals: number;
 		expectedIntervals: number;
 		coveragePercent: number;

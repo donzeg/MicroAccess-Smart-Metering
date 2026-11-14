@@ -66,7 +66,7 @@
 	<PageHeader
 		eyebrow="Na-Aka Hub energy operations"
 		title="Energy mix"
-		description="A like-for-like comparison of solar, grid and any configured generator supply using only periods reported by every active source meter."
+		description="See the overall source mix, then measure how much solar complemented grid and generator during each source's active periods."
 		{refreshHref}
 	/>
 
@@ -103,7 +103,7 @@
 			<article class="panel contribution">
 				<div class="heading">
 					<div><p>Contribution split</p><h2>What powered Na-Aka Hub</h2></div>
-					<span class:good={summary.targetStatus === 'within_target'} class:warn={summary.targetStatus !== 'within_target'}>{targetLabel(summary.targetStatus)}</span>
+					<span class="neutral">Overall matched mix</span>
 				</div>
 				<div class="energy-flow">
 					<div class="source solar-source">
@@ -131,9 +131,60 @@
 				</div>
 			</article>
 
-			<aside class="panel gauge-panel">
-				<div class="heading"><div><p>Solar performance</p><h2>90–95% contribution target</h2></div></div>
-				<EnergyMixGauge solarPercent={summary.solarPercent} minimum={result.target.solarMinimumPercent} maximum={result.target.solarMaximumPercent} />
+			<aside class="performance-stack" aria-label="Pairwise solar performance">
+				<article class="panel comparison-card">
+					<div class="heading">
+						<div><p>Grid complement</p><h2>Solar vs grid</h2></div>
+						{#if summary.solarVsGrid.available}<span class:good={summary.solarVsGrid.targetStatus === 'within_target'} class:warn={summary.solarVsGrid.targetStatus !== 'within_target'}>{targetLabel(summary.solarVsGrid.targetStatus)}</span>{/if}
+					</div>
+					{#if summary.solarVsGrid.available}
+						<div class="comparison-body">
+							<EnergyMixGauge
+								solarPercent={summary.solarVsGrid.solarPercent ?? 0}
+								minimum={result.target.solarMinimumPercent}
+								maximum={result.target.solarMaximumPercent}
+								label="Solar share vs grid"
+								comparison="grid-active matched energy"
+								compact
+							/>
+							<div class="comparison-details">
+								<div><span class="solar-mark"></span><small>Solar</small><strong>{formatNumber(summary.solarVsGrid.solarKwh)} kWh</strong></div>
+								<div><span class="grid-mark"></span><small>Grid</small><strong>{formatNumber(summary.solarVsGrid.companionKwh)} kWh</strong></div>
+								<p>{summary.solarVsGrid.matchedActiveIntervals} of {summary.solarVsGrid.companionActiveIntervals} grid-active hours matched · {summary.solarVsGrid.coveragePercent.toFixed(1)}% coverage</p>
+							</div>
+						</div>
+					{:else}
+						<div class="comparison-empty"><UtilityPole size={25} /><div><strong>No matched grid activity</strong><p>The percentage will appear when both solar and grid report during a grid-active interval.</p></div></div>
+					{/if}
+				</article>
+
+				<article class="panel comparison-card generator-comparison">
+					<div class="heading">
+						<div><p>Generator complement</p><h2>Solar vs generator</h2></div>
+						{#if summary.solarVsGenerator.available}<span class:good={summary.solarVsGenerator.targetStatus === 'within_target'} class:warn={summary.solarVsGenerator.targetStatus !== 'within_target'}>{targetLabel(summary.solarVsGenerator.targetStatus)}</span>{/if}
+					</div>
+					{#if summary.solarVsGenerator.available}
+						<div class="comparison-body">
+							<EnergyMixGauge
+								solarPercent={summary.solarVsGenerator.solarPercent ?? 0}
+								minimum={result.target.solarMinimumPercent}
+								maximum={result.target.solarMaximumPercent}
+								label="Solar share vs generator"
+								comparison="generator-active matched energy"
+								compact
+							/>
+							<div class="comparison-details">
+								<div><span class="solar-mark"></span><small>Solar</small><strong>{formatNumber(summary.solarVsGenerator.solarKwh)} kWh</strong></div>
+								<div><span class="generator-mark"></span><small>Generator</small><strong>{formatNumber(summary.solarVsGenerator.companionKwh)} kWh</strong></div>
+								<p>{summary.solarVsGenerator.matchedActiveIntervals} of {summary.solarVsGenerator.companionActiveIntervals} generator-active hours matched · {summary.solarVsGenerator.coveragePercent.toFixed(1)}% coverage</p>
+							</div>
+						</div>
+					{:else if !summary.generatorConfigured}
+						<div class="comparison-empty awaiting"><Fuel size={25} /><div><strong>Awaiting generator meter</strong><p>No percentage is shown until a dedicated generator meter is installed and classified.</p></div></div>
+					{:else}
+						<div class="comparison-empty awaiting"><Fuel size={25} /><div><strong>No matched generator activity</strong><p>The meter is configured, but no generator-active interval overlaps a solar reading in this window.</p></div></div>
+					{/if}
+				</article>
 			</aside>
 		</section>
 
@@ -176,7 +227,7 @@
 			<aside class="panel quality">
 				<div class="heading"><div><p>Data-quality boundary</p><h2>How to read the result</h2></div><Database size={18} /></div>
 				<div class="method"><span>1</span><p><strong>Use interval consumption.</strong> “Usage kWh” is the change in the cumulative meter register during the preceding interval.</p></div>
-				<div class="method"><span>2</span><p><strong>Match the timestamps.</strong> A period counts only when all currently configured source meters report for the same time.</p></div>
+				<div class="method"><span>2</span><p><strong>Match the right pair.</strong> Solar vs grid uses grid-active hours where both meters reported; solar vs generator uses generator-active hours where both meters reported.</p></div>
 				<div class="method"><span>3</span><p><strong>Do not manufacture zeroes.</strong> Missing readings remain missing. The future generator leg is excluded until its physical meter is connected and classified.</p></div>
 				<div class="method"><span>4</span><p><strong>Runtime is initially an estimate.</strong> Once installed, generator-active hourly intervals can estimate runtime; exact runtime needs engine start/stop telemetry or finer readings.</p></div>
 				<p class="range">Analysis window: <strong>{formatDateTime(result.range.from)}</strong> to <strong>{formatDateTime(result.range.to)}</strong> (Africa/Lagos).</p>
@@ -197,13 +248,13 @@
 	.filter-title { display: flex; align-items: center; gap: .65rem; color: var(--blue); }.filter-title div { min-width: 0; }.filter-title strong, .filter-title span { display: block; }.filter-title strong { color: var(--navy); font-size: .7rem; }.filter-title span { margin-top: .16rem; color: var(--text-muted); font-size: .53rem; }
 	.filter-panel form { display: flex; align-items: flex-end; justify-content: flex-end; gap: .45rem; }.filter-panel label { display: grid; gap: .25rem; color: var(--text-muted); font-size: .5rem; font-weight: 750; }.filter-panel input, .filter-panel select { min-height: 2.15rem; box-sizing: border-box; padding: .45rem .55rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface-soft); color: var(--text); font-size: .62rem; }.filter-panel button, .filter-panel form > a { display: inline-flex; min-height: 2.15rem; box-sizing: border-box; align-items: center; padding: .48rem .7rem; border: 0; border-radius: .55rem; background: var(--action); color: white; font-size: .58rem; font-weight: 800; text-decoration: none; cursor: pointer; }.filter-panel form > a { border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); }
 	.sync-status { display: flex; grid-column: 1 / -1; flex-wrap: wrap; align-items: center; gap: .45rem 1rem; padding-top: .65rem; border-top: 1px solid var(--line-soft); color: var(--text-muted); font-size: .54rem; }.sync-status span { display: inline-flex; align-items: center; gap: .35rem; }.sync-status strong { color: var(--blue); }
-	.hero-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(17rem, .65fr); gap: .8rem; }
+	.hero-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(29rem, 1fr); gap: .8rem; }
 	.panel { padding: 1rem; }
 	.heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 	.heading p { margin: 0 0 .3rem; color: var(--steel); font-size: .58rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
 	.heading h2 { margin: 0; color: var(--navy); font-size: 1.02rem; }
 	.heading > span { padding: .38rem .6rem; border-radius: 999px; font-size: .58rem; font-weight: 800; white-space: nowrap; }
-	.heading > span.good { background: color-mix(in srgb, var(--success) 16%, var(--surface)); color: var(--success); }.heading > span.warn { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); color: var(--warning); }
+	.heading > span.good { background: color-mix(in srgb, var(--success) 16%, var(--surface)); color: var(--success); }.heading > span.warn { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); color: var(--warning); }.heading > span.neutral { background: var(--pale-blue); color: var(--blue); }
 	.energy-flow { display: grid; min-height: 17rem; grid-template-columns: 1fr minmax(2rem,.45fr) 1.25fr minmax(10rem,1.35fr); align-items: center; gap: .35rem; padding: 1rem .3rem .2rem; }
 	.source, .building { text-align: center; }
 	.icon, .building-icon { display: grid; width: 3.3rem; height: 3.3rem; margin: 0 auto .7rem; place-items: center; border-radius: 50%; }
@@ -216,7 +267,22 @@
 	.source strong, .building strong { display: block; margin-top: .22rem; color: var(--navy); font-size: 1rem; }.building strong { font-size: 1.32rem; }.source small, .building small { display: block; margin-top: .24rem; color: var(--text-muted); font-size: .53rem; }
 	.flow-line { position: relative; height: 3px; background: var(--line); }.flow-line span { position: absolute; top: 50%; right: -.05rem; width: .48rem; height: .48rem; transform: translateY(-50%) rotate(45deg); border-top: 2px solid; border-right: 2px solid; }.solar-line { background: linear-gradient(90deg, var(--sky), var(--teal)); }.solar-line span { color: var(--teal); }
 	.right-sources { display: grid; gap: 1.1rem; }.right-source { display: grid; grid-template-columns: minmax(2rem,.55fr) 1fr; align-items: center; gap: .3rem; }.incoming { transform: rotate(180deg); }.grid-line { background: linear-gradient(90deg, #001d39, #0a4174); }.grid-line span { color: #0a4174; }.generator-line { background: linear-gradient(90deg, var(--generator), color-mix(in srgb, var(--generator) 42%, var(--line))); }.generator-line span { color: var(--generator); }
-	.gauge-panel { display: flex; align-items: center; flex-direction: column; }.gauge-panel .heading { width: 100%; margin-bottom: .8rem; }
+	.performance-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+	.comparison-card { display: flex; min-width: 0; align-items: center; flex-direction: column; }
+	.comparison-card .heading { width: 100%; min-height: 3.5rem; flex-direction: column; gap: .45rem; }
+	.comparison-card .heading > span { align-self: flex-start; padding: .3rem .48rem; font-size: .48rem; }
+	.comparison-card .heading h2 { font-size: .88rem; }
+	.comparison-body { display: flex; width: 100%; flex: 1; align-items: center; flex-direction: column; justify-content: center; gap: .75rem; padding-top: .65rem; }
+	.comparison-details { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+	.comparison-details > div { display: grid; min-width: 0; grid-template-columns: auto 1fr; gap: .08rem .3rem; padding: .48rem; border: 1px solid var(--line-soft); border-radius: .55rem; background: var(--surface-soft); }
+	.comparison-details > div > span { width: .42rem; height: .42rem; grid-row: 1 / 3; align-self: center; border-radius: 50%; }
+	.solar-mark { background: var(--teal); }.grid-mark { background: var(--navy); }.generator-mark { background: var(--generator); }
+	.comparison-details small { overflow: hidden; color: var(--text-muted); font-size: .47rem; text-overflow: ellipsis; white-space: nowrap; }
+	.comparison-details strong { overflow: hidden; color: var(--navy); font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+	.comparison-details p { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: .49rem; line-height: 1.45; text-align: center; }
+	.comparison-empty { display: flex; min-height: 11rem; align-items: center; flex-direction: column; justify-content: center; gap: .65rem; color: var(--blue); text-align: center; }
+	.comparison-empty > div { max-width: 12rem; }.comparison-empty strong { display: block; color: var(--navy); font-size: .76rem; }.comparison-empty p { margin: .28rem 0 0; color: var(--text-muted); font-size: .53rem; line-height: 1.5; }
+	.comparison-empty.awaiting { color: var(--generator); }
 	.kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: .65rem; margin: .8rem 0; }
 	.kpis article { display: flex; min-width: 0; align-items: center; gap: .7rem; padding: .8rem; border: 1px solid var(--line); border-radius: .85rem; background: var(--surface); box-shadow: var(--shadow-sm); }
 	.kpi-icon { display: grid; width: 2.35rem; height: 2.35rem; flex: 0 0 auto; place-items: center; border-radius: .66rem; background: var(--pale-blue); color: var(--blue); }.kpi-icon.solar { background: color-mix(in srgb, var(--teal) 15%, var(--surface)); color: var(--teal); }.kpi-icon.grid { background: color-mix(in srgb, var(--blue) 14%, var(--surface)); color: var(--blue); }.kpi-icon.generator { background: color-mix(in srgb, var(--generator) 16%, var(--surface)); color: var(--generator); }
@@ -226,7 +292,6 @@
 	.detail-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: .8rem; }.sources .heading, .quality .heading { margin-bottom: .8rem; }.sources .heading :global(svg), .quality .heading :global(svg) { color: var(--teal); }
 	.source-list { display: grid; gap: .45rem; }.source-list a, .pending-source { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .65rem; padding: .7rem; border: 1px solid var(--line-soft); border-radius: .75rem; color: inherit; text-decoration: none; }.source-list a:hover { border-color: var(--sky); background: var(--surface-soft); }.source-list a > span, .pending-source > span { display: grid; width: 2.15rem; height: 2.15rem; place-items: center; border-radius: .6rem; }.solar-meter { background: color-mix(in srgb, var(--teal) 15%, var(--surface)); color: var(--teal); }.grid-meter { background: color-mix(in srgb, var(--blue) 14%, var(--surface)); color: var(--blue); }.generator-meter { background: color-mix(in srgb, var(--generator) 16%, var(--surface)); color: var(--generator); }.source-list strong, .source-list small { display: block; }.source-list strong { color: var(--navy); font-size: .66rem; }.source-list small { margin-top: .14rem; color: var(--text-muted); font-size: .52rem; }.source-window { text-align: right; }.pending-source { border-style: dashed; }.pending-source em { color: var(--generator); font-size: .54rem; font-style: normal; font-weight: 800; }
 	.method { display: grid; grid-template-columns: auto 1fr; gap: .55rem; margin-bottom: .55rem; }.method > span { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; border-radius: 50%; background: var(--pale-blue); color: var(--blue); font-size: .56rem; font-weight: 850; }.method p { margin: 0; color: var(--text-muted); font-size: .61rem; line-height: 1.5; }.method strong { color: var(--navy); }.range { margin: .75rem 0 0; padding: .65rem; border-radius: .65rem; background: var(--surface-soft); color: var(--text-muted); font-size: .56rem; line-height: 1.5; }.range strong { color: var(--navy); }
-	@media (max-width: 1250px) { .kpis { grid-template-columns: repeat(3, 1fr); }.filter-panel { grid-template-columns: 1fr; }.filter-panel form { justify-content: flex-start; }.sync-status { grid-column: 1; } }
-	@media (max-width: 1100px) { .hero-grid, .detail-grid { grid-template-columns: 1fr; } }
-	@media (max-width: 700px) { .periods { grid-template-columns: repeat(2, 1fr); }.filter-panel form { align-items: stretch; flex-direction: column; }.filter-panel form > a, .filter-panel button { justify-content: center; }.energy-flow { grid-template-columns: 1fr; gap: .8rem; }.flow-line { width: 3px; height: 1.5rem; margin: 0 auto; }.solar-line { background: linear-gradient(var(--sky), var(--teal)); }.flow-line span { top: auto; right: 50%; bottom: -.05rem; transform: translateX(50%) rotate(135deg); }.right-sources { width: 100%; }.right-source { grid-template-columns: 1fr; }.incoming { transform: none; }.building { order: 3; }.solar-source { order: 1; }.solar-line { order: 2; }.right-sources { order: 4; }.kpis { grid-template-columns: 1fr; }.chart-heading { align-items: flex-start; flex-direction: column; }.legend { justify-content: flex-start; }.source-list a, .pending-source { grid-template-columns: auto 1fr; }.source-window, .pending-source em { grid-column: 2; text-align: left; } }
+	@media (max-width: 1250px) { .hero-grid, .detail-grid { grid-template-columns: 1fr; }.kpis { grid-template-columns: repeat(3, 1fr); }.filter-panel { grid-template-columns: 1fr; }.filter-panel form { justify-content: flex-start; }.sync-status { grid-column: 1; } }
+	@media (max-width: 700px) { .periods, .performance-stack { grid-template-columns: 1fr; }.filter-panel form { align-items: stretch; flex-direction: column; }.filter-panel form > a, .filter-panel button { justify-content: center; }.energy-flow { grid-template-columns: 1fr; gap: .8rem; }.flow-line { width: 3px; height: 1.5rem; margin: 0 auto; }.solar-line { background: linear-gradient(var(--sky), var(--teal)); }.flow-line span { top: auto; right: 50%; bottom: -.05rem; transform: translateX(50%) rotate(135deg); }.right-sources { width: 100%; }.right-source { grid-template-columns: 1fr; }.incoming { transform: none; }.building { order: 3; }.solar-source { order: 1; }.solar-line { order: 2; }.right-sources { order: 4; }.kpis { grid-template-columns: 1fr; }.chart-heading { align-items: flex-start; flex-direction: column; }.legend { justify-content: flex-start; }.source-list a, .pending-source { grid-template-columns: auto 1fr; }.source-window, .pending-source em { grid-column: 2; text-align: left; } }
 </style>
