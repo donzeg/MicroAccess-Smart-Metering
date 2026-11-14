@@ -19,6 +19,8 @@ export interface MeterArchiveRepository {
   upsertTransactions(transactions: MeterArchiveTransactionInput[]): Promise<number>;
   listTransactions(category: 'UCH' | 'PAY', from: string, to: string): Promise<MeterArchiveTransactionInput[]>;
   latestTransactionAt(category: 'UCH' | 'PAY'): Promise<string | null>;
+  getTransactionSyncCursor(category: 'UCH' | 'PAY'): Promise<string | null>;
+  saveTransactionSyncCursor(category: 'UCH' | 'PAY', syncedThrough: string): Promise<void>;
   saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void>;
   getOperationalSnapshot<T>(key: string): Promise<{ value: T; retrievedAt: string } | null>;
   beginSync(runId: string, startedAt: string): Promise<void>;

@@ -966,7 +966,6 @@ export class SteamaOperationsService {
       throw new Error('meter_archive_not_configured');
     }
 
-    const previousStatus = await this.meterArchiveRepository.getSyncStatus(this.meterArchiveSyncEnabled);
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
     await this.meterArchiveRepository.beginSync(runId, startedAt);
@@ -1013,27 +1012,28 @@ export class SteamaOperationsService {
         directiveReadingsObserved += directiveReadings.length;
       }
       const initialStartMs = syncEndMs - this.meterArchiveInitialBackfillDays * 24 * HOUR_MS;
-      const transactionBatches: SteamaCustomerTransaction[][] = [];
+      let transactionsObserved = 0;
+      let transactionsStored = 0;
       for (const category of ['UCH', 'PAY'] as const) {
         const latestTransactionAt = await this.meterArchiveRepository.latestTransactionAt(category);
-        const resumeAt = latestTransactionAt ?? previousStatus.lastSuccessfulAt;
+        const syncCursor = await this.meterArchiveRepository.getTransactionSyncCursor(category);
+        const resumeAt = latestTransactionAt ?? syncCursor;
         const transactionStartMs = resumeAt
           ? Math.max(initialStartMs, new Date(resumeAt).getTime() - 2 * HOUR_MS)
           : initialStartMs;
-        transactionBatches.push(await this.fetchProviderTransactionsFromProvider(category, transactionStartMs));
+        const transactions = await this.fetchProviderTransactionsFromProvider(category, transactionStartMs);
+        transactionsObserved += transactions.length;
+        transactionsStored += await this.meterArchiveRepository.upsertTransactions(
+          transactions.map((transaction) => ({ ...transaction, category }))
+        );
+        await this.meterArchiveRepository.saveTransactionSyncCursor(category, new Date(syncEndMs).toISOString());
       }
-      const transactions = transactionBatches.flat();
-      const transactionsStored = await this.meterArchiveRepository.upsertTransactions(
-        transactions.filter((transaction): transaction is SteamaCustomerTransaction & { category: 'UCH' | 'PAY' } =>
-          transaction.category === 'UCH' || transaction.category === 'PAY'
-        )
-      );
       const counts: MeterArchiveSyncCounts = {
         readingsObserved: archiveReadings.length + directiveReadingsObserved,
         readingsStored: utilityReadingsStored + directiveReadingsObserved,
         statusesObserved: statuses.length,
         statusesStored,
-        transactionsObserved: transactions.length,
+        transactionsObserved,
         transactionsStored
       };
       await this.meterArchiveRepository.completeSync(runId, new Date().toISOString(), counts);

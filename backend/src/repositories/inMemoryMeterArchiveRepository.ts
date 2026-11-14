@@ -33,6 +33,7 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
   private readonly runs = new Map<string, SyncRun>();
   private readonly operationalSnapshots = new Map<string, { value: unknown; retrievedAt: string }>();
   private readonly transactions = new Map<string, MeterArchiveTransactionInput>();
+  private readonly transactionSyncCursors = new Map<'UCH' | 'PAY', string>();
 
   async upsertReadings(readings: MeterArchiveReadingInput[]): Promise<number> {
     for (const reading of readings) {
@@ -135,6 +136,14 @@ export class InMemoryMeterArchiveRepository implements MeterArchiveRepository {
       .map((transaction) => transaction.timestamp)
       .sort()
       .at(-1) ?? null;
+  }
+
+  async getTransactionSyncCursor(category: 'UCH' | 'PAY'): Promise<string | null> {
+    return this.transactionSyncCursors.get(category) ?? null;
+  }
+
+  async saveTransactionSyncCursor(category: 'UCH' | 'PAY', syncedThrough: string): Promise<void> {
+    this.transactionSyncCursors.set(category, syncedThrough);
   }
 
   async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {

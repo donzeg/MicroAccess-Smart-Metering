@@ -310,6 +310,27 @@ export class PgMeterArchiveRepository implements MeterArchiveRepository {
     return result.rows[0]?.latest?.toISOString() ?? null;
   }
 
+  async getTransactionSyncCursor(category: 'UCH' | 'PAY'): Promise<string | null> {
+    const result = await this.pool.query<{ synced_through: Date }>(
+      `SELECT synced_through
+       FROM steama_transaction_sync_state
+       WHERE provider = $1 AND category = $2`,
+      [PROVIDER, category]
+    );
+    return result.rows[0]?.synced_through.toISOString() ?? null;
+  }
+
+  async saveTransactionSyncCursor(category: 'UCH' | 'PAY', syncedThrough: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO steama_transaction_sync_state (provider, category, synced_through, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (provider, category) DO UPDATE SET
+         synced_through = EXCLUDED.synced_through,
+         updated_at = NOW()`,
+      [PROVIDER, category, syncedThrough]
+    );
+  }
+
   async saveOperationalSnapshot<T>(key: string, value: T, retrievedAt: string): Promise<void> {
     await this.pool.query(
       `INSERT INTO steama_operational_snapshots (provider, resource_key, payload, retrieved_at, updated_at)

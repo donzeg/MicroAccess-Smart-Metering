@@ -86,6 +86,9 @@ describe('InMemoryMeterArchiveRepository', () => {
       repository.listTransactions('UCH', '2026-11-14T00:00:00.000Z', '2026-11-15T00:00:00.000Z')
     ).resolves.toEqual([transaction]);
     await expect(repository.latestTransactionAt('UCH')).resolves.toBe(transaction.timestamp);
+    await expect(repository.getTransactionSyncCursor('UCH')).resolves.toBeNull();
+    await repository.saveTransactionSyncCursor('UCH', '2026-11-14T09:00:00.000Z');
+    await expect(repository.getTransactionSyncCursor('UCH')).resolves.toBe('2026-11-14T09:00:00.000Z');
     await expect(repository.getSyncStatus(true)).resolves.toMatchObject({ totalArchivedTransactions: 1 });
   });
 });
