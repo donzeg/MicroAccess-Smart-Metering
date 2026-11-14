@@ -21,19 +21,29 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-	const periodOptions: Array<{ key: EnergyMixPeriod; label: string; detail: string }> = [
-		{ key: 'hourly', label: 'Hourly', detail: 'Last 24 hours' },
-		{ key: 'daily', label: 'Daily', detail: 'Last 30 days' },
-		{ key: 'weekly', label: 'Weekly', detail: 'Last 12 weeks' },
-		{ key: 'monthly', label: 'Monthly', detail: 'Last 12 months' }
+	const rangeOptions = [
+		{ key: 'today', label: 'Today', detail: 'Midnight to latest completed hour', grouping: 'Hourly' },
+		{ key: '7d', label: '7 Days', detail: 'Seven calendar days', grouping: 'Daily' },
+		{ key: '30d', label: '30 Days', detail: 'Thirty calendar days', grouping: 'Daily' },
+		{ key: '12m', label: '12 Months', detail: 'Twelve calendar months', grouping: 'Monthly' },
+		{ key: 'ytd', label: 'Year to Date', detail: 'January 1 to today', grouping: 'Monthly' }
+	];
+	const groupingOptions: Array<{ key: EnergyMixPeriod; label: string }> = [
+		{ key: 'hourly', label: 'Hourly' },
+		{ key: 'daily', label: 'Daily' },
+		{ key: 'weekly', label: 'Weekly' },
+		{ key: 'monthly', label: 'Monthly' }
 	];
 	let result = $derived(data.energyMix);
 	let summary = $derived(result?.summary ?? null);
+	let missingIntervals = $derived(summary ? Math.max(0, summary.expectedIntervals - summary.matchedIntervals) : 0);
 	let solarSources = $derived(result?.sourceMeters.filter((meter) => meter.role === 'solar_source') ?? []);
 	let gridSources = $derived(result?.sourceMeters.filter((meter) => meter.role === 'grid_source') ?? []);
 	let generatorSources = $derived(result?.sourceMeters.filter((meter) => meter.role === 'generator_source') ?? []);
 	let allSources = $derived([...solarSources, ...gridSources, ...generatorSources]);
-	let refreshHref = $derived(`/energy-mix?period=${data.period}${data.customRange ? `&from=${data.customRange.from}&to=${data.customRange.to}` : ''}&refresh=true`);
+	let refreshHref = $derived(data.customRange
+		? `/energy-mix?period=${data.period}&from=${data.customRange.from}&to=${data.customRange.to}&refresh=true`
+		: `/energy-mix?range=${data.preset ?? 'today'}&refresh=true`);
 	let autoRefreshIn = $state(15 * 60);
 
 	onMount(() => {
@@ -71,12 +81,20 @@
 	/>
 
 	<nav class="periods" aria-label="Energy comparison presets">
-		{#each periodOptions as option (option.key)}
-			<a class:active={data.period === option.key && !data.customRange} href={`/energy-mix?period=${option.key}`}>
-				<strong>{option.label}</strong><span>{option.detail}</span>
+		{#each rangeOptions as option (option.key)}
+			<a class:active={data.preset === option.key && !data.customRange} href={`/energy-mix?range=${option.key}`}>
+				<strong>{option.label}</strong><span>{option.detail}</span><small>Grouped {option.grouping.toLowerCase()}</small>
 			</a>
 		{/each}
 	</nav>
+
+	{#if result}
+		<section class="window-summary" aria-label="Active reporting window">
+			<div><CalendarRange size={19} /><span><small>Active reporting window</small><strong>{data.rangeLabel}</strong></span></div>
+			<p>{formatDateTime(result.range.from)} <span>to</span> {formatDateTime(result.range.to)} <small>Africa/Lagos</small></p>
+			<strong>Grouped {data.groupingLabel}</strong>
+		</section>
+	{/if}
 
 	<section class="filter-panel" aria-label="Custom energy data filter">
 		<div class="filter-title"><CalendarRange size={18} /><div><strong>Custom analysis window</strong><span>Choose exact dates and how the results should be grouped.</span></div></div>
@@ -84,10 +102,10 @@
 			<label>From<input type="date" name="from" value={data.customRange?.from ?? ''} max={data.today} required /></label>
 			<label>To<input type="date" name="to" value={data.customRange?.to ?? ''} max={data.today} required /></label>
 			<label>Group by<select name="period" value={data.period}>
-				{#each periodOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}
+				{#each groupingOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}
 			</select></label>
 			<button type="submit">Apply filter</button>
-			{#if data.customRange}<a href={`/energy-mix?period=${data.period}`}>Clear custom dates</a>{/if}
+			{#if data.customRange}<a href="/energy-mix?range=today">Clear custom dates</a>{/if}
 		</form>
 		<div class="sync-status">
 			<span><Clock3 size={15} /> Vendor readings normally arrive hourly. MSM checks this view every 15 minutes.</span>
@@ -99,6 +117,13 @@
 	{#if data.error}
 		<section class="state">{data.error.message}</section>
 	{:else if result && summary}
+		{#if missingIntervals > 0}
+			<section class="coverage-alert" aria-label="Incomplete meter coverage warning">
+				<Activity size={20} />
+				<div><strong>{missingIntervals} hourly {missingIntervals === 1 ? 'interval is' : 'intervals are'} missing from this window</strong><span>The totals use {summary.matchedIntervals} matched intervals. Missing readings remain missing and are never counted as zero consumption.</span></div>
+				<b>{summary.coveragePercent.toFixed(1)}% coverage</b>
+			</section>
+		{/if}
 		<section class="hero-grid">
 			<article class="panel contribution">
 				<div class="heading">
@@ -237,17 +262,21 @@
 </AppShell>
 
 <style>
-	.state, .panel, .filter-panel { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
+	.state, .panel, .filter-panel, .window-summary { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
 	.state { padding: 1rem; color: var(--danger); }
-	.periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: .55rem; margin-bottom: .65rem; }
+	.periods { display: grid; grid-template-columns: repeat(5, 1fr); gap: .55rem; margin-bottom: .65rem; }
 	.periods a { padding: .68rem .8rem; border: 1px solid var(--line); border-radius: .78rem; background: color-mix(in srgb, var(--surface) 82%, transparent); color: var(--text); text-decoration: none; }
 	.periods a:hover, .periods a.active { border-color: var(--sky); background: var(--surface); box-shadow: var(--shadow-sm); }
 	.periods a.active { box-shadow: inset 0 -3px 0 var(--teal), var(--shadow-sm); }
-	.periods strong, .periods span { display: block; }.periods strong { color: var(--navy); font-size: .72rem; }.periods span { margin-top: .15rem; color: var(--text-muted); font-size: .55rem; }
+	.periods strong, .periods span, .periods small { display: block; }.periods strong { color: var(--navy); font-size: .72rem; }.periods span { margin-top: .15rem; color: var(--text-muted); font-size: .55rem; }.periods small { margin-top: .3rem; color: var(--blue); font-size: .49rem; font-weight: 800; }
+	.window-summary { display: grid; grid-template-columns: minmax(12rem,.7fr) minmax(20rem,1.6fr) auto; align-items: center; gap: .8rem 1.2rem; margin-bottom: .65rem; padding: .7rem 1rem; }
+	.window-summary > div { display: flex; align-items: center; gap: .6rem; color: var(--blue); }.window-summary > div span small, .window-summary > div span strong { display: block; }.window-summary > div span small { color: var(--text-muted); font-size: .48rem; }.window-summary > div span strong { margin-top: .1rem; color: var(--navy); font-size: .68rem; }
+	.window-summary p { margin: 0; color: var(--navy); font-size: .58rem; font-weight: 750; }.window-summary p span, .window-summary p small { color: var(--text-muted); font-weight: 500; }.window-summary > strong { padding: .38rem .6rem; border-radius: 999px; background: var(--pale-blue); color: var(--blue); font-size: .53rem; text-transform: capitalize; white-space: nowrap; }
 	.filter-panel { display: grid; grid-template-columns: minmax(12rem,.7fr) minmax(31rem,1.5fr); gap: .8rem 1.2rem; margin-bottom: .8rem; padding: .85rem 1rem; }
 	.filter-title { display: flex; align-items: center; gap: .65rem; color: var(--blue); }.filter-title div { min-width: 0; }.filter-title strong, .filter-title span { display: block; }.filter-title strong { color: var(--navy); font-size: .7rem; }.filter-title span { margin-top: .16rem; color: var(--text-muted); font-size: .53rem; }
 	.filter-panel form { display: flex; align-items: flex-end; justify-content: flex-end; gap: .45rem; }.filter-panel label { display: grid; gap: .25rem; color: var(--text-muted); font-size: .5rem; font-weight: 750; }.filter-panel input, .filter-panel select { min-height: 2.15rem; box-sizing: border-box; padding: .45rem .55rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface-soft); color: var(--text); font-size: .62rem; }.filter-panel button, .filter-panel form > a { display: inline-flex; min-height: 2.15rem; box-sizing: border-box; align-items: center; padding: .48rem .7rem; border: 0; border-radius: .55rem; background: var(--action); color: white; font-size: .58rem; font-weight: 800; text-decoration: none; cursor: pointer; }.filter-panel form > a { border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); }
 	.sync-status { display: flex; grid-column: 1 / -1; flex-wrap: wrap; align-items: center; gap: .45rem 1rem; padding-top: .65rem; border-top: 1px solid var(--line-soft); color: var(--text-muted); font-size: .54rem; }.sync-status span { display: inline-flex; align-items: center; gap: .35rem; }.sync-status strong { color: var(--blue); }
+	.coverage-alert { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .75rem; margin-bottom: .8rem; padding: .72rem .9rem; border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--line)); border-radius: .85rem; background: color-mix(in srgb, var(--warning) 8%, var(--surface)); color: var(--warning); box-shadow: var(--shadow-sm); }.coverage-alert div strong, .coverage-alert div span { display: block; }.coverage-alert div strong { color: var(--navy); font-size: .65rem; }.coverage-alert div span { margin-top: .15rem; color: var(--text-muted); font-size: .54rem; line-height: 1.45; }.coverage-alert b { padding: .38rem .55rem; border-radius: 999px; background: color-mix(in srgb, var(--warning) 16%, var(--surface)); color: var(--warning); font-size: .54rem; white-space: nowrap; }
 	.hero-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(29rem, 1fr); gap: .8rem; }
 	.panel { padding: 1rem; }
 	.heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
@@ -292,6 +321,6 @@
 	.detail-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: .8rem; }.sources .heading, .quality .heading { margin-bottom: .8rem; }.sources .heading :global(svg), .quality .heading :global(svg) { color: var(--teal); }
 	.source-list { display: grid; gap: .45rem; }.source-list a, .pending-source { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .65rem; padding: .7rem; border: 1px solid var(--line-soft); border-radius: .75rem; color: inherit; text-decoration: none; }.source-list a:hover { border-color: var(--sky); background: var(--surface-soft); }.source-list a > span, .pending-source > span { display: grid; width: 2.15rem; height: 2.15rem; place-items: center; border-radius: .6rem; }.solar-meter { background: color-mix(in srgb, var(--teal) 15%, var(--surface)); color: var(--teal); }.grid-meter { background: color-mix(in srgb, var(--blue) 14%, var(--surface)); color: var(--blue); }.generator-meter { background: color-mix(in srgb, var(--generator) 16%, var(--surface)); color: var(--generator); }.source-list strong, .source-list small { display: block; }.source-list strong { color: var(--navy); font-size: .66rem; }.source-list small { margin-top: .14rem; color: var(--text-muted); font-size: .52rem; }.source-window { text-align: right; }.pending-source { border-style: dashed; }.pending-source em { color: var(--generator); font-size: .54rem; font-style: normal; font-weight: 800; }
 	.method { display: grid; grid-template-columns: auto 1fr; gap: .55rem; margin-bottom: .55rem; }.method > span { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; border-radius: 50%; background: var(--pale-blue); color: var(--blue); font-size: .56rem; font-weight: 850; }.method p { margin: 0; color: var(--text-muted); font-size: .61rem; line-height: 1.5; }.method strong { color: var(--navy); }.range { margin: .75rem 0 0; padding: .65rem; border-radius: .65rem; background: var(--surface-soft); color: var(--text-muted); font-size: .56rem; line-height: 1.5; }.range strong { color: var(--navy); }
-	@media (max-width: 1250px) { .hero-grid, .detail-grid { grid-template-columns: 1fr; }.kpis { grid-template-columns: repeat(3, 1fr); }.filter-panel { grid-template-columns: 1fr; }.filter-panel form { justify-content: flex-start; }.sync-status { grid-column: 1; } }
-	@media (max-width: 700px) { .periods, .performance-stack { grid-template-columns: 1fr; }.filter-panel form { align-items: stretch; flex-direction: column; }.filter-panel form > a, .filter-panel button { justify-content: center; }.energy-flow { grid-template-columns: 1fr; gap: .8rem; }.flow-line { width: 3px; height: 1.5rem; margin: 0 auto; }.solar-line { background: linear-gradient(var(--sky), var(--teal)); }.flow-line span { top: auto; right: 50%; bottom: -.05rem; transform: translateX(50%) rotate(135deg); }.right-sources { width: 100%; }.right-source { grid-template-columns: 1fr; }.incoming { transform: none; }.building { order: 3; }.solar-source { order: 1; }.solar-line { order: 2; }.right-sources { order: 4; }.kpis { grid-template-columns: 1fr; }.chart-heading { align-items: flex-start; flex-direction: column; }.legend { justify-content: flex-start; }.source-list a, .pending-source { grid-template-columns: auto 1fr; }.source-window, .pending-source em { grid-column: 2; text-align: left; } }
+	@media (max-width: 1250px) { .periods { grid-template-columns: repeat(3, 1fr); }.window-summary { grid-template-columns: 1fr auto; }.window-summary p { grid-column: 1 / -1; grid-row: 2; }.hero-grid, .detail-grid { grid-template-columns: 1fr; }.kpis { grid-template-columns: repeat(3, 1fr); }.filter-panel { grid-template-columns: 1fr; }.filter-panel form { justify-content: flex-start; }.sync-status { grid-column: 1; } }
+	@media (max-width: 700px) { .periods, .performance-stack, .window-summary { grid-template-columns: 1fr; }.window-summary p, .window-summary > strong { grid-column: 1; grid-row: auto; }.window-summary > strong { justify-self: start; }.coverage-alert { grid-template-columns: auto 1fr; }.coverage-alert b { grid-column: 2; justify-self: start; }.filter-panel form { align-items: stretch; flex-direction: column; }.filter-panel form > a, .filter-panel button { justify-content: center; }.energy-flow { grid-template-columns: 1fr; gap: .8rem; }.flow-line { width: 3px; height: 1.5rem; margin: 0 auto; }.solar-line { background: linear-gradient(var(--sky), var(--teal)); }.flow-line span { top: auto; right: 50%; bottom: -.05rem; transform: translateX(50%) rotate(135deg); }.right-sources { width: 100%; }.right-source { grid-template-columns: 1fr; }.incoming { transform: none; }.building { order: 3; }.solar-source { order: 1; }.solar-line { order: 2; }.right-sources { order: 4; }.kpis { grid-template-columns: 1fr; }.chart-heading { align-items: flex-start; flex-direction: column; }.legend { justify-content: flex-start; }.source-list a, .pending-source { grid-template-columns: auto 1fr; }.source-window, .pending-source em { grid-column: 2; text-align: left; } }
 </style>
