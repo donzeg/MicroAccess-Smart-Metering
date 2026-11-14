@@ -47,11 +47,11 @@
 	.actual { position: absolute; top: 50%; width: .76rem; height: .76rem; transform: translate(-50%, -50%); border: 2px solid white; border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
 	.target-caption { display: flex; width: 100%; justify-content: space-between; margin-top: .42rem; color: var(--text-muted); font-size: .55rem; }
 	.target-caption strong { color: #24724f; }
-	.gauge-wrap.compact { width: min(7.6rem, 38vw); }
-	.compact .centre { border-width: .28rem; }
-	.compact .centre strong { font-size: 1.38rem; }
-	.compact .centre span { max-width: 4.5rem; font-size: .48rem; line-height: 1.2; }
-	.compact .target-scale { height: .3rem; margin-top: .7rem; }
-	.compact .actual { width: .58rem; height: .58rem; }
-	.compact .target-caption { font-size: .43rem; }
+	.gauge-wrap.compact { width: min(10.6rem, 58vw); }
+	.compact .centre { width: 65%; border-width: .36rem; }
+	.compact .centre strong { font-size: 1.78rem; }
+	.compact .centre span { max-width: 6rem; font-size: .56rem; line-height: 1.25; }
+	.compact .target-scale { height: .42rem; margin-top: .9rem; }
+	.compact .actual { width: .72rem; height: .72rem; }
+	.compact .target-caption { margin-top: .48rem; font-size: .5rem; }
 </style>
