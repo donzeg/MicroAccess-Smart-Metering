@@ -2593,7 +2593,7 @@ export class SteamaOperationsService {
     const warnings = [
       'Floor consumption uses recorded intervals plus cumulative-register movement recovered after connectivity gaps; recovered energy is kept unattributed when its original hour is unknown.',
       'The first name is treated as the permanent floor or unit position and the last name as the current tenant snapshot.',
-      'Tenant history begins when MSM first observes a position or when management records an earlier effective date; earlier usage remains explicitly unattributed.',
+      'Tenant history begins when MSM first observes the SteamaCo position and customer name; earlier usage remains explicitly unattributed.',
       'Legacy position codes are interpreted using the observed Na-Aka Hub convention: G codes are Ground Floor, F0 codes are First Floor, and F2–F5 identify Floors 2–5.',
       'SteamaCo exposes limited timestamped interval history; cumulative-register recovery preserves total energy but cannot reconstruct the original missing hours.',
       'Estimated Naira values use the effective-dated retail tariff for each recorded or recovered interval and are not cash collections.'
