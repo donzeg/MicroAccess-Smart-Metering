@@ -18,6 +18,15 @@ const toOptionalPositiveNumber = (value: string | undefined): number | null => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
+const toIsoDate = (value: string | undefined, fallback: string): string => {
+  const candidate = value?.trim() || fallback;
+  const parsed = new Date(candidate);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('MSM_COMMISSIONING_EPOCH_AT must be a valid date and time.');
+  }
+  return parsed.toISOString();
+};
+
 const toBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (!value) {
     return fallback;
@@ -93,6 +102,10 @@ export const env = {
   retailTariffBand: process.env.MSM_RETAIL_TARIFF_BAND?.trim() || 'A',
   retailTariffEffectiveFrom: process.env.MSM_RETAIL_TARIFF_EFFECTIVE_FROM?.trim() || null,
   gridSourceIncludesGenerator: toBoolean(process.env.MSM_GRID_SOURCE_INCLUDES_GENERATOR, true),
+  commissioningEpochAt: toIsoDate(
+    process.env.MSM_COMMISSIONING_EPOCH_AT,
+    '2025-12-31T23:00:00.000Z'
+  ),
   meterRegisterBaselines: toMeterRegisterBaselines(process.env.MSM_METER_REGISTER_BASELINES_JSON),
   steamaEnabled: toBoolean(process.env.STEAMA_ENABLED, false),
   steamaBaseUrl: process.env.STEAMA_BASE_URL ?? 'https://api.steama.co',

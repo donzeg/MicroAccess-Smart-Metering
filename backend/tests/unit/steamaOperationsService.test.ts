@@ -905,4 +905,85 @@ describe('SteamaOperationsService', () => {
       vi.useRealTimers();
     }
   });
+
+  it('uses the shared 2026 commissioning epoch to include a customer meter cumulative register', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-15T08:15:00Z'));
+
+    try {
+      const archive = new InMemoryMeterArchiveRepository();
+      await archive.upsertReadings([{
+        source: 'utility_reading',
+        intervalStart: '2026-11-08T07:00:00.000Z',
+        timestamp: '2026-11-08T08:01:00.000Z',
+        readingKwh: 1_745.95,
+        usageKwh: 44.66,
+        anomalous: false,
+        meterId: '258980',
+        meterNumber: '0179250930429',
+        customerId: '1638023',
+        customerName: '5th Floor -01 MicroAccess Corporate Office'
+      }]);
+      const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+        if (path === '/meters/') {
+          return Promise.resolve({
+            count: 1,
+            results: [{
+              id: 258980,
+              reference: '0179250930429',
+              meter_type_name: 'DS3600',
+              customer: 1638023,
+              customer_name: '5th Floor -01 MicroAccess Corporate Office',
+              latest_meter_reading: 1_745.95,
+              latest_meter_reading_timestamp: '2026-11-08T08:01:00.000Z',
+              offline_duration_status: 'Offline (6 days)'
+            }]
+          });
+        }
+        if (path === '/customers/') {
+          return Promise.resolve({
+            count: 1,
+            results: [{
+              id: 1638023,
+              first_name: '5th Floor -01',
+              last_name: 'MicroAccess Corporate Office',
+              energy_price: 203,
+              service_based_tariff: 'A'
+            }]
+          });
+        }
+        if (path === '/sites/') return Promise.resolve({ count: 1, results: [{ id: 20, name: 'Na-Aka Hub' }] });
+        throw new Error(`unexpected_path:${path}`);
+      });
+
+      const result = await new SteamaOperationsService(
+        { request },
+        60_000,
+        {
+          retailTariffNgnPerKwh: 203,
+          tariffEffectiveFrom: '2025-12-31T23:00:00.000Z',
+          commissioningEpochAt: '2025-12-31T23:00:00.000Z',
+          meterArchiveRepository: archive
+        }
+      ).getFloorAnalysis('monthly');
+
+      expect(result.summary).toMatchObject({
+        totalUsageKwh: 1_745.95,
+        registerRecoveredKwh: 1_701.29,
+        estimatedValueNgn: 354_427.85
+      });
+      expect(result.floors.find((floor) => floor.key === 'fifth-floor')).toMatchObject({
+        usageKwh: 1_745.95,
+        registerRecoveredKwh: 1_701.29
+      });
+      expect(result.positions.find((position) => position.customerId === '1638023')).toMatchObject({
+        usageKwh: 1_745.95,
+        registerRecoveredKwh: 1_701.29,
+        observedIntervals: 1
+      });
+      expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/meters/258980/directives/' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

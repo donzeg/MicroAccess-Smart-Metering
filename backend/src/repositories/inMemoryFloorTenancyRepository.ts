@@ -75,7 +75,7 @@ export class InMemoryFloorTenancyRepository implements FloorTenancyRepository {
           evidenceReference: 'steama_customer_snapshot',
           createdBy: 'system:steama-observer'
         });
-      } else if (current.source === 'provider_snapshot' && current.tenantName !== observation.providerTenantName) {
+      } else if (current.tenantName !== observation.providerTenantName) {
         current.effectiveTo = observation.observedAt;
         current.lastObservedAt = observation.observedAt;
         timeline.tenancies.push({

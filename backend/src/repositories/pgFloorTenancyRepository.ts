@@ -146,7 +146,7 @@ export class PgFloorTenancyRepository implements FloorTenancyRepository {
           [randomUUID(), position.id, observation.providerTenantName, now]
         );
       } else if (
-        observation.providerTenantName && current?.source === 'provider_snapshot' &&
+        observation.providerTenantName && current &&
         current.tenant_name !== observation.providerTenantName
       ) {
         await client.query(

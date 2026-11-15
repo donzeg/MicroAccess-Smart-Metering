@@ -99,6 +99,7 @@ export interface SteamaOperationsOptions {
   meterArchiveRepository?: MeterArchiveRepository;
   meterArchiveSyncEnabled?: boolean;
   meterArchiveInitialBackfillDays?: number;
+  commissioningEpochAt?: string | null;
   meterRegisterBaselines?: MeterRegisterBaseline[];
 }
 
@@ -932,6 +933,38 @@ const classifyFloorPosition = (
 const isEstatePlaceholder = (value: string): boolean =>
   value.toLowerCase().replace(/[^a-z0-9]/g, '') === 'naakahub';
 
+interface FloorPositionInput {
+  customer: SteamaCustomerSummary;
+  customerMeters: SteamaMeterSummary[];
+  identity: ReturnType<typeof classifyFloorPosition>;
+}
+
+const buildFloorPositionInputs = (
+  customers: SteamaCustomerSummary[],
+  meters: SteamaMeterSummary[]
+): FloorPositionInput[] => {
+  const metersByCustomer = new Map<string, SteamaMeterSummary[]>();
+  for (const meter of meters) {
+    if (!meter.customerId) continue;
+    const customerMeters = metersByCustomer.get(meter.customerId) ?? [];
+    customerMeters.push(meter);
+    metersByCustomer.set(meter.customerId, customerMeters);
+  }
+
+  return customers.flatMap((customer) => {
+    const customerMeters = metersByCustomer.get(customer.providerId) ?? [];
+    const sourceAccount = /^power\s*room$/i.test(customer.firstName) || customerMeters.some((meter) =>
+      ['solar_source', 'grid_source', 'generator_source'].includes(meter.operationalRole)
+    );
+    if (sourceAccount) return [];
+    return [{
+      customer,
+      customerMeters,
+      identity: classifyFloorPosition(customer.firstName, customer.displayName)
+    }];
+  });
+};
+
 const createFloorUsageBuckets = (
   period: EnergyMixPeriod,
   rangeStartMs: number,
@@ -1062,6 +1095,7 @@ export class SteamaOperationsService {
   private readonly meterArchiveRepository: MeterArchiveRepository | null;
   private readonly meterArchiveSyncEnabled: boolean;
   private readonly meterArchiveInitialBackfillDays: number;
+  private readonly commissioningEpochAt: string | null;
   private readonly meterRegisterBaselines: MeterRegisterBaseline[];
 
   constructor(
@@ -1078,6 +1112,7 @@ export class SteamaOperationsService {
     this.meterArchiveRepository = options.meterArchiveRepository ?? null;
     this.meterArchiveSyncEnabled = options.meterArchiveSyncEnabled ?? false;
     this.meterArchiveInitialBackfillDays = options.meterArchiveInitialBackfillDays ?? 3650;
+    this.commissioningEpochAt = options.commissioningEpochAt ?? null;
     this.meterRegisterBaselines = options.meterRegisterBaselines ?? [];
   }
 
@@ -1164,9 +1199,39 @@ export class SteamaOperationsService {
     meter: Pick<SteamaMeterSummary, 'providerId' | 'meterNumber'>
   ): MeterRegisterBaseline | undefined {
     const meterNumber = canonicalMeterNumber(meter.meterNumber);
-    return this.meterRegisterBaselines.find((baseline) =>
+    const explicit = this.meterRegisterBaselines.find((baseline) =>
       (baseline.providerId && baseline.providerId === meter.providerId) ||
       (baseline.meterNumber && canonicalMeterNumber(baseline.meterNumber) === meterNumber)
+    );
+    if (explicit) return explicit;
+    return this.commissioningEpochAt
+      ? {
+          providerId: meter.providerId,
+          meterNumber: meter.meterNumber,
+          readingKwh: 0,
+          effectiveAt: this.commissioningEpochAt
+        }
+      : undefined;
+  }
+
+  private observeProviderTenancies(
+    positionInputs: FloorPositionInput[],
+    observedAt: string
+  ): Promise<FloorPositionTenancyTimeline[]> {
+    return Promise.all(
+      positionInputs.map(({ customer, identity }) =>
+        this.floorTenancyRepository.observeProviderPosition({
+          providerCustomerId: customer.providerId,
+          siteKey: 'na-aka-hub',
+          floorKey: identity.floorKey,
+          floorLevel: identity.floorLevel,
+          positionLabel: identity.positionLabel,
+          providerPositionName: customer.firstName || customer.displayName,
+          mappingEvidence: identity.mappingEvidence,
+          providerTenantName: customer.lastName,
+          observedAt
+        })
+      )
     );
   }
 
@@ -1215,7 +1280,10 @@ export class SteamaOperationsService {
         const customers = asCollection(customersPayload).records.map((record) =>
           normalizeCustomer(record, meterNumbersByCustomer)
         );
-        await this.synchronizeTariff(customers, observedAt);
+        await Promise.all([
+          this.synchronizeTariff(customers, observedAt),
+          this.observeProviderTenancies(buildFloorPositionInputs(customers, meters), observedAt)
+        ]);
       }
       const statuses = meters.map((meter) => ({
         observedAt,
@@ -2215,7 +2283,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `floors-v4:${await this.tariffSnapshotVersion()}:${cacheKey}`;
+    const snapshotKey = `floors-v5:${await this.tariffSnapshotVersion()}:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaFloorAnalysis>(snapshotKey);
       if (retained) {
@@ -2252,39 +2320,10 @@ export class SteamaOperationsService {
       new Date(range.end).toISOString(),
       overview.customers
     );
-    const metersByCustomer = new Map<string, SteamaMeterSummary[]>();
-    for (const meter of overview.meters) {
-      if (!meter.customerId) continue;
-      const customerMeters = metersByCustomer.get(meter.customerId) ?? [];
-      customerMeters.push(meter);
-      metersByCustomer.set(meter.customerId, customerMeters);
-    }
-
-    const positionInputs = overview.customers.flatMap((customer) => {
-      const customerMeters = metersByCustomer.get(customer.providerId) ?? [];
-      const sourceAccount = /^power\s*room$/i.test(customer.firstName) || customerMeters.some((meter) =>
-        ['solar_source', 'grid_source', 'generator_source'].includes(meter.operationalRole)
-      );
-      if (sourceAccount) return [];
-      return [{ customer, customerMeters, identity: classifyFloorPosition(customer.firstName, customer.displayName) }];
-    });
+    const positionInputs = buildFloorPositionInputs(overview.customers, overview.meters);
 
     const observedAt = new Date(now).toISOString();
-    const tenancyTimelines = await Promise.all(
-      positionInputs.map(({ customer, identity }) =>
-        this.floorTenancyRepository.observeProviderPosition({
-          providerCustomerId: customer.providerId,
-          siteKey: 'na-aka-hub',
-          floorKey: identity.floorKey,
-          floorLevel: identity.floorLevel,
-          positionLabel: identity.positionLabel,
-          providerPositionName: customer.firstName || customer.displayName,
-          mappingEvidence: identity.mappingEvidence,
-          providerTenantName: customer.lastName,
-          observedAt
-        })
-      )
-    );
+    const tenancyTimelines = await this.observeProviderTenancies(positionInputs, observedAt);
     const tenancyTimelineByCustomer = new Map(
       tenancyTimelines.map((timeline) => [timeline.providerCustomerId, timeline])
     );
@@ -2574,7 +2613,7 @@ export class SteamaOperationsService {
       warnings.push('Positions without an assigned meter remain visible but contribute no energy until a provider assignment exists.');
     }
     if (positions.some((position) => position.providerTenantDrift)) {
-      warnings.push('A SteamaCo tenant-name change differs from an approved MSM tenancy record and requires management review.');
+      warnings.push('A newly observed SteamaCo customer name is being reconciled into the retained position history.');
     }
     if (tariff.mismatchedCustomerCount > 0) {
       warnings.push(`${tariff.mismatchedCustomerCount} customer tariff(s) differ from the current effective MSM tariff.`);

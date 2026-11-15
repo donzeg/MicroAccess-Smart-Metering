@@ -87,6 +87,7 @@ export const buildApp = (): FastifyInstance => {
           tariffEffectiveFrom: env.retailTariffEffectiveFrom,
           tariffRepository,
           gridSourceIncludesGenerator: env.gridSourceIncludesGenerator,
+          commissioningEpochAt: env.commissioningEpochAt,
           meterRegisterBaselines: env.meterRegisterBaselines,
           floorTenancyRepository: pool
             ? new PgFloorTenancyRepository(pool)

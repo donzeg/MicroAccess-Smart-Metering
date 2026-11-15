@@ -42,7 +42,7 @@ describe('InMemoryFloorTenancyRepository', () => {
     }
   });
 
-  it('flags provider drift without overwriting a management-approved current tenant', async () => {
+  it('automatically records a later SteamaCo name even when an older local correction exists', async () => {
     const repository = new InMemoryFloorTenancyRepository();
     const observation = {
       providerCustomerId: '100',
@@ -70,10 +70,21 @@ describe('InMemoryFloorTenancyRepository', () => {
       observedAt: '2026-11-13T09:00:00.000Z'
     });
 
-    expect(timeline.currentTenantName).toBe('Approved Tenant');
-    expect(timeline.currentTenantSource).toBe('management_record');
+    expect(timeline.currentTenantName).toBe('Different Provider Name');
+    expect(timeline.currentTenantSource).toBe('provider_snapshot');
     expect(timeline.providerTenantName).toBe('Different Provider Name');
-    expect(timeline.providerDrift).toBe(true);
-    expect(timeline.tenancies).toHaveLength(1);
+    expect(timeline.providerDrift).toBe(false);
+    expect(timeline.tenancies).toHaveLength(2);
+    expect(timeline.tenancies[0]).toMatchObject({
+      tenantName: 'Approved Tenant',
+      source: 'management_record',
+      effectiveTo: '2026-11-13T09:00:00.000Z'
+    });
+    expect(timeline.tenancies[1]).toMatchObject({
+      tenantName: 'Different Provider Name',
+      source: 'provider_snapshot',
+      effectiveFrom: '2026-11-13T09:00:00.000Z',
+      effectiveTo: null
+    });
   });
 });
