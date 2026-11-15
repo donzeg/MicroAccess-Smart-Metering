@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryMeterArchiveRepository } from '../../src/repositories/inMemoryMeterArchiveRepository.js';
+import { InMemoryTariffRepository } from '../../src/repositories/inMemoryTariffRepository.js';
 import { SteamaOperationsService } from '../../src/services/steamaOperationsService.js';
 
 describe('SteamaOperationsService', () => {
@@ -308,6 +309,111 @@ describe('SteamaOperationsService', () => {
     expect(customer).toMatchObject({ accountBalance: -2000, energyBalanceKwh: 12, assignedMeterNumber: 'MTR-001' });
     expect(customer.transactionSummary).toMatchObject({ retrievedCount: 2, totalAmount: -2000, usageChargeAmount: -2500, paymentAmount: 500 });
     expect(customer.warnings.join(' ')).toContain('negative account balance');
+  });
+
+  it('derives a usable kWh balance from a positive Naira balance when the provider returns zero kWh', async () => {
+    const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === '/meters/') return Promise.resolve({ count: 0, results: [] });
+      if (path === '/customers/') {
+        return Promise.resolve({
+          count: 1,
+          results: [{
+            id: 10,
+            first_name: '5th Floor -01',
+            last_name: 'MicroAccess Corporate Office',
+            account_balance: 211025.37,
+            energy_balance: 0,
+            energy_price: 203,
+            service_based_tariff: 'A'
+          }]
+        });
+      }
+      if (path === '/sites/') return Promise.resolve({ count: 0, results: [] });
+      throw new Error(`unexpected_path:${path}`);
+    });
+
+    const overview = await new SteamaOperationsService(
+      { request },
+      60_000,
+      {
+        retailTariffNgnPerKwh: 203,
+        tariffEffectiveFrom: '2025-12-31T23:00:00.000Z'
+      }
+    ).getOverview();
+
+    expect(overview.customers[0]).toMatchObject({
+      accountBalance: 211025.37,
+      providerEnergyBalanceKwh: 0,
+      energyBalanceKwh: 1039.53,
+      energyBalanceSource: 'derived_from_monetary_balance',
+      energyBalanceRateNgnPerKwh: 203,
+      tariffMismatch: false
+    });
+  });
+
+  it('values each interval with the tariff effective when that energy was consumed', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-12T10:15:00Z'));
+
+    try {
+      const tariffRepository = new InMemoryTariffRepository();
+      await tariffRepository.ensureBootstrap({
+        scopeKey: 'na-aka-hub',
+        tariffBand: 'A',
+        retailNgnPerKwh: 203,
+        effectiveFrom: '2026-11-12T00:00:00.000Z',
+        observedAt: '2026-11-12T00:00:00.000Z'
+      });
+      await tariffRepository.observeProviderTariff({
+        scopeKey: 'na-aka-hub',
+        tariffBand: 'A',
+        retailNgnPerKwh: 250,
+        providerCustomerCount: 20,
+        observedAt: '2026-11-12T09:00:00.000Z'
+      });
+      const request = vi.fn().mockImplementation(
+        ({ path, query }: { path: string; query?: Record<string, unknown> }) => {
+          if (path === '/meters/') {
+            return Promise.resolve({
+              count: 1,
+              results: [{ id: 1, reference: 'SOLAR', name: 'Solar source', offline_duration_status: 'Online' }]
+            });
+          }
+          if (path === '/customers/' || path === '/sites/') return Promise.resolve({ count: 0, results: [] });
+          if (path === '/meters/1/directives/') {
+            return Promise.resolve({
+              count: 2,
+              results: [
+                { timestamp: '2026-11-12T09:00:00Z', data: JSON.stringify({ usage_amount: 10 }) },
+                { timestamp: '2026-11-12T10:00:00Z', data: JSON.stringify({ usage_amount: 10 }) }
+              ]
+            });
+          }
+          if (path === '/transactions/' && (query?.category === 'UCH' || query?.category === 'PAY')) {
+            return Promise.resolve({ count: 0, results: [] });
+          }
+          throw new Error(`unexpected_path:${path}`);
+        }
+      );
+      const result = await new SteamaOperationsService(
+        { request },
+        60_000,
+        { tariffRepository }
+      ).getRevenueAnalysis('hourly');
+
+      expect(result.summary).toMatchObject({
+        totalKwh: 20,
+        accruedEnergyRevenueNgn: 4530,
+        solarAccruedRevenueNgn: 4530
+      });
+      expect(result.tariff).toMatchObject({
+        retailNgnPerKwh: 250,
+        versionsApplied: 2,
+        status: 'provider_synchronized'
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('totals each source independently while keeping pair comparisons time-matched', async () => {

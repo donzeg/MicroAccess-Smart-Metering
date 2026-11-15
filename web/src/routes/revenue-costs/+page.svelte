@@ -115,11 +115,11 @@
 		{/if}
 		<section class="truth-banner">
 			<ShieldAlert size={19} />
-			<div><strong>Revenue follows energy consumed—not the timing of customer credit purchases</strong><span>Every register-accounted kWh is valued at the configured Band A rate of {formatNaira(result.tariff.retailNgnPerKwh)}. The current conventional meter combines AEDC and generator supply, so that value remains shared until the dedicated generator meter is installed. Collections and actual operating costs remain separate.</span></div>
+			<div><strong>Revenue follows energy consumed—not the timing of customer credit purchases</strong><span>Every register-accounted kWh is valued using the effective-dated tariff. The current Band {result.tariff.tariffBand} rate is {formatNaira(result.tariff.retailNgnPerKwh)} and {result.tariff.versionsApplied} tariff version(s) apply in this window. Collections and actual operating costs remain separate.</span></div>
 		</section>
 
 		<section class="kpis">
-			<article><span class="kpi-icon"><Zap size={18} /></span><div><p>Accrued energy revenue</p><strong>{formatNaira(summary.accruedEnergyRevenueNgn)}</strong><span>{formatNumber(summary.totalKwh)} kWh consumed × {formatNaira(result.tariff.retailNgnPerKwh)}</span></div></article>
+			<article><span class="kpi-icon"><Zap size={18} /></span><div><p>Accrued energy revenue</p><strong>{formatNaira(summary.accruedEnergyRevenueNgn)}</strong><span>{formatNumber(summary.totalKwh)} kWh across {result.tariff.versionsApplied} effective tariff version(s)</span></div></article>
 			<article><span class="kpi-icon solar"><SunMedium size={18} /></span><div><p>Solar energy revenue</p><strong>{formatNaira(summary.solarAccruedRevenueNgn)}</strong><span>{formatNumber(summary.solarKwh)} kWh · {summary.solarPercent.toFixed(1)}%</span></div></article>
 			<article><span class="kpi-icon grid"><UtilityPole size={18} /></span><div><p>{sharedSupplyLabel} revenue</p><strong>{formatNaira(summary.sharedSupplyAccruedRevenueNgn)}</strong><span>{formatNumber(summary.gridKwh)} kWh · {summary.gridPercent.toFixed(1)}%</span></div></article>
 			<article><span class="kpi-icon generator"><Fuel size={18} /></span><div><p>Generator revenue</p><strong>{generatorSeparatelyMetered ? formatNaira(summary.generatorAccruedRevenueNgn) : 'Included above'}</strong><span>{generatorSeparatelyMetered ? `${formatNumber(summary.generatorKwh)} kWh separately metered` : 'Dedicated generator meter pending'}</span></div></article>

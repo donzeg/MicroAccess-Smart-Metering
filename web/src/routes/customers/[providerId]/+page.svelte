@@ -17,7 +17,7 @@
 		{@const customer = data.customer}
 		<section class="kpis">
 			<article class:negative={(customer.accountBalance ?? 0) < 0}><WalletCards size={18} /><span>Current account balance</span><strong>{formatNaira(customer.accountBalance)}</strong><p>Provider monetary ledger—not kWh</p></article>
-			<article><Gauge size={18} /><span>Energy balance</span><strong>{formatNumber(customer.energyBalanceKwh)} <small>kWh</small></strong><p>Residual energy value reported by provider</p></article>
+			<article><Gauge size={18} /><span>Energy balance</span><strong>{formatNumber(customer.energyBalanceKwh)} <small>kWh</small></strong><p>{customer.energyBalanceSource === 'derived_from_monetary_balance' ? `Derived from the Naira balance at ${formatNaira(customer.energyBalanceRateNgnPerKwh)}/kWh` : customer.energyBalanceSource === 'provider' ? 'Residual energy reported by provider' : 'Energy balance unavailable'}</p></article>
 			<article><ReceiptText size={18} /><span>Retrieved transactions</span><strong>{customer.transactionSummary.retrievedCount}</strong><p>{formatDateTime(customer.transactionSummary.from)} – {formatDateTime(customer.transactionSummary.to)}</p></article>
 			<article><CircleDollarSign size={18} /><span>Retrieved payment credits</span><strong>{formatNaira(customer.transactionSummary.paymentAmount)}</strong><p>PAY category within retrieved window</p></article>
 		</section>

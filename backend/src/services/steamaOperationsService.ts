@@ -2,8 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import type { SteamaReadOnlyRequest } from './steamaReadOnlyClient.js';
 import { InMemoryFloorTenancyRepository } from '../repositories/inMemoryFloorTenancyRepository.js';
+import { InMemoryTariffRepository } from '../repositories/inMemoryTariffRepository.js';
 import type { FloorTenancyRepository } from '../repositories/interfaces.js';
 import type { MeterArchiveRepository } from '../repositories/meterArchiveRepository.js';
+import type {
+  ProviderTariffConsensus,
+  TariffRepository,
+  TariffVersion
+} from '../types/tariff.js';
 import {
   recoverUsageFromRegister,
   type MeterRegisterBaseline,
@@ -84,8 +90,10 @@ interface CachedFloorAnalysis {
 }
 
 export interface SteamaOperationsOptions {
-  retailTariffNgnPerKwh?: number;
+  retailTariffNgnPerKwh?: number | null;
+  retailTariffBand?: string;
   tariffEffectiveFrom?: string | null;
+  tariffRepository?: TariffRepository;
   gridSourceIncludesGenerator?: boolean;
   floorTenancyRepository?: FloorTenancyRepository;
   meterArchiveRepository?: MeterArchiveRepository;
@@ -123,6 +131,7 @@ const SOLAR_TARGET_MINIMUM = 90;
 const SOLAR_TARGET_MAXIMUM = 95;
 const DIRECTIVE_PAGE_SIZE = 250;
 const ENERGY_MIX_CACHE_TTL_MS = 10 * 60_000;
+const TARIFF_SCOPE_KEY = 'na-aka-hub';
 
 const energyMixTargetStatus = (solarPercent: number | null): EnergyMixTargetStatus => {
   if (solarPercent === null) return 'no_data';
@@ -499,6 +508,8 @@ const normalizeCustomer = (
 
   const meterRaw = firstValue(record, ['meter', 'assigned_meter', 'meter_number', 'meter_reference']);
   const observedMeterNumbers = meterNumbersByCustomer.get(providerId) ?? [];
+  const providerEnergyBalanceKwh = numberValue(firstValue(record, ['energy_balance', 'energy_balance_kwh']));
+  const energyPrice = numberValue(firstValue(record, ['energy_price', 'unit_price']));
   return {
     providerId,
     firstName,
@@ -508,11 +519,79 @@ const normalizeCustomer = (
     siteName: labelValue(firstValue(record, ['site_name', 'site'])) || 'Not provided',
     assignedMeterNumber: observedMeterNumbers.join(', ') || labelValue(meterRaw) || null,
     accountBalance: numberValue(firstValue(record, ['account_balance', 'balance'])),
-    energyBalanceKwh: numberValue(firstValue(record, ['energy_balance', 'energy_balance_kwh'])),
-    energyPrice: numberValue(firstValue(record, ['energy_price', 'unit_price'])),
+    energyBalanceKwh: providerEnergyBalanceKwh,
+    providerEnergyBalanceKwh,
+    energyBalanceSource: providerEnergyBalanceKwh === null ? 'unavailable' : 'provider',
+    energyBalanceRateNgnPerKwh: providerEnergyBalanceKwh === null ? null : energyPrice,
+    energyPrice,
     tariffBand: stringValue(firstValue(record, ['service_based_tariff', 'tariff_band'])) || 'Not configured',
+    tariffMismatch: false,
     controlType: stringValue(firstValue(record, ['control_type'])) || 'Not provided'
   };
+};
+
+const providerTariffConsensus = (customers: SteamaCustomerSummary[]): ProviderTariffConsensus => {
+  const priced = customers.filter(
+    (customer): customer is SteamaCustomerSummary & { energyPrice: number } =>
+      customer.energyPrice !== null && Number.isFinite(customer.energyPrice) && customer.energyPrice > 0
+  );
+  const groups = new Map<string, { rate: number; band: string; count: number }>();
+  for (const customer of priced) {
+    const band = customer.tariffBand === 'Not configured' ? 'A' : customer.tariffBand;
+    const key = `${customer.energyPrice.toFixed(6)}:${band}`;
+    const group = groups.get(key) ?? { rate: customer.energyPrice, band, count: 0 };
+    group.count += 1;
+    groups.set(key, group);
+  }
+  const ordered = Array.from(groups.values()).sort((left, right) => right.count - left.count);
+  const leader = ordered[0];
+  return {
+    retailNgnPerKwh: groups.size === 1 ? leader?.rate ?? null : null,
+    tariffBand: groups.size === 1 ? leader?.band ?? null : null,
+    pricedCustomerCount: priced.length,
+    unpricedCustomerCount: Math.max(0, customers.length - priced.length),
+    mismatchedCustomerCount: groups.size <= 1 ? 0 : priced.length - (leader?.count ?? 0),
+    consistent: groups.size === 1 && priced.length > 0
+  };
+};
+
+const applyCustomerTariff = (
+  customer: SteamaCustomerSummary,
+  currentTariff: TariffVersion | null
+): SteamaCustomerSummary => {
+  const rate = customer.energyPrice && customer.energyPrice > 0
+    ? customer.energyPrice
+    : currentTariff?.retailNgnPerKwh ?? null;
+  const needsDerivedBalance =
+    customer.accountBalance !== null && customer.accountBalance > 0 &&
+    rate !== null &&
+    (customer.providerEnergyBalanceKwh === null || customer.providerEnergyBalanceKwh <= 0);
+  const tariffMismatch = Boolean(
+    currentTariff && customer.energyPrice && customer.energyPrice > 0 &&
+    Math.abs(customer.energyPrice - currentTariff.retailNgnPerKwh) > 0.000001
+  );
+  return {
+    ...customer,
+    energyBalanceKwh: needsDerivedBalance
+      ? roundEnergy(customer.accountBalance! / rate!)
+      : customer.providerEnergyBalanceKwh,
+    energyBalanceSource: needsDerivedBalance
+      ? 'derived_from_monetary_balance'
+      : customer.providerEnergyBalanceKwh === null
+        ? 'unavailable'
+        : 'provider',
+    energyBalanceRateNgnPerKwh: needsDerivedBalance ? rate : customer.energyPrice,
+    tariffMismatch
+  };
+};
+
+const tariffAt = (versions: TariffVersion[], timestamp: string): TariffVersion | null => {
+  const timestampMs = new Date(timestamp).getTime();
+  return versions.find((version) => {
+    const fromMs = new Date(version.effectiveFrom).getTime();
+    const toMs = version.effectiveTo ? new Date(version.effectiveTo).getTime() : Number.POSITIVE_INFINITY;
+    return timestampMs >= fromMs && timestampMs < toMs;
+  }) ?? null;
 };
 
 const canonicalMeterNumber = (value: string): string => value.replace(/\s+/g, '').toLowerCase();
@@ -714,6 +793,10 @@ const createEnergyBuckets = (
       generatorKwh: 0,
       totalKwh: 0,
       registerRecoveredKwh: 0,
+      energyValueNgn: 0,
+      solarValueNgn: 0,
+      gridValueNgn: 0,
+      generatorValueNgn: 0,
       solarPercent: 0,
       gridPercent: 0,
       generatorPercent: 0,
@@ -906,6 +989,7 @@ const buildExceptions = (meters: SteamaMeterSummary[], customers: SteamaCustomer
   const customerWithoutMeter = customers.filter((customer) => !customer.assignedMeterNumber).length;
   const unclassified = meters.filter((meter) => meter.operationalRole === 'unknown').length;
   const safety = meters.filter((meter) => meter.criticalError === true || meter.lidTamper === true).length;
+  const tariffMismatch = customers.filter((customer) => customer.tariffMismatch).length;
 
   const exceptions: SteamaOperationsException[] = [
     {
@@ -949,6 +1033,13 @@ const buildExceptions = (meters: SteamaMeterSummary[], customers: SteamaCustomer
       severity: 'medium',
       count: unclassified,
       action: 'Classify each meter as source, bulk, customer load, spare or retired.'
+    },
+    {
+      key: 'tariff_mismatch',
+      label: 'Customer tariffs differ from the effective MSM rate',
+      severity: 'high',
+      count: tariffMismatch,
+      action: 'Complete the SteamaCo bulk tariff update or correct the affected customer accounts.'
     }
   ];
 
@@ -962,8 +1053,10 @@ export class SteamaOperationsService {
   private readonly cachedRevenueAnalysis = new Map<string, CachedRevenueAnalysis>();
   private readonly cachedFloorAnalysis = new Map<string, CachedFloorAnalysis>();
   private readonly inFlightRequests = new Map<string, Promise<unknown>>();
-  private readonly retailTariffNgnPerKwh: number;
+  private readonly configuredRetailTariffNgnPerKwh: number | null;
+  private readonly configuredRetailTariffBand: string;
   private readonly tariffEffectiveFrom: string | null;
+  private readonly tariffRepository: TariffRepository;
   private readonly gridSourceIncludesGenerator: boolean;
   private readonly floorTenancyRepository: FloorTenancyRepository;
   private readonly meterArchiveRepository: MeterArchiveRepository | null;
@@ -976,14 +1069,95 @@ export class SteamaOperationsService {
     private readonly cacheTtlMs = 60_000,
     options: SteamaOperationsOptions = {}
   ) {
-    this.retailTariffNgnPerKwh = options.retailTariffNgnPerKwh ?? 203;
+    this.configuredRetailTariffNgnPerKwh = options.retailTariffNgnPerKwh ?? null;
+    this.configuredRetailTariffBand = options.retailTariffBand ?? 'A';
     this.tariffEffectiveFrom = options.tariffEffectiveFrom ?? null;
+    this.tariffRepository = options.tariffRepository ?? new InMemoryTariffRepository();
     this.gridSourceIncludesGenerator = options.gridSourceIncludesGenerator ?? true;
     this.floorTenancyRepository = options.floorTenancyRepository ?? new InMemoryFloorTenancyRepository();
     this.meterArchiveRepository = options.meterArchiveRepository ?? null;
     this.meterArchiveSyncEnabled = options.meterArchiveSyncEnabled ?? false;
     this.meterArchiveInitialBackfillDays = options.meterArchiveInitialBackfillDays ?? 3650;
     this.meterRegisterBaselines = options.meterRegisterBaselines ?? [];
+  }
+
+  private async synchronizeTariff(
+    customers: SteamaCustomerSummary[],
+    observedAt: string
+  ): Promise<{
+    current: TariffVersion | null;
+    consensus: ProviderTariffConsensus;
+    customers: SteamaCustomerSummary[];
+  }> {
+    const previous = await this.tariffRepository.getCurrent(TARIFF_SCOPE_KEY);
+    if (this.configuredRetailTariffNgnPerKwh !== null) {
+      await this.tariffRepository.ensureBootstrap({
+        scopeKey: TARIFF_SCOPE_KEY,
+        tariffBand: this.configuredRetailTariffBand,
+        retailNgnPerKwh: this.configuredRetailTariffNgnPerKwh,
+        effectiveFrom: this.tariffEffectiveFrom ?? '1970-01-01T00:00:00.000Z',
+        observedAt
+      });
+    }
+    const consensus = providerTariffConsensus(customers);
+    if (
+      consensus.consistent &&
+      consensus.retailNgnPerKwh !== null &&
+      consensus.tariffBand !== null
+    ) {
+      await this.tariffRepository.observeProviderTariff({
+        scopeKey: TARIFF_SCOPE_KEY,
+        tariffBand: consensus.tariffBand,
+        retailNgnPerKwh: consensus.retailNgnPerKwh,
+        providerCustomerCount: consensus.pricedCustomerCount,
+        observedAt
+      });
+    }
+    const current = await this.tariffRepository.getCurrent(TARIFF_SCOPE_KEY);
+    if (
+      previous?.id !== current?.id ||
+      previous?.providerCustomerCount !== current?.providerCustomerCount
+    ) {
+      this.cachedOverview = null;
+      this.cachedEnergyMix.clear();
+      this.cachedRevenueAnalysis.clear();
+      this.cachedFloorAnalysis.clear();
+    }
+    return {
+      current,
+      consensus,
+      customers: customers.map((customer) => applyCustomerTariff(customer, current))
+    };
+  }
+
+  private async tariffSnapshotVersion(): Promise<string> {
+    return (await this.tariffRepository.getCurrent(TARIFF_SCOPE_KEY))?.id ?? 'unconfigured';
+  }
+
+  private async tariffContext(
+    from: string,
+    to: string,
+    customers: SteamaCustomerSummary[]
+  ): Promise<{
+    current: TariffVersion;
+    versions: TariffVersion[];
+    mismatchedCustomerCount: number;
+    status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+  }> {
+    const current = await this.tariffRepository.getCurrent(TARIFF_SCOPE_KEY);
+    if (!current) throw new Error('retail_tariff_not_configured');
+    const versions = await this.tariffRepository.listForRange(TARIFF_SCOPE_KEY, from, to);
+    const mismatchedCustomerCount = customers.filter((customer) => customer.tariffMismatch).length;
+    return {
+      current,
+      versions,
+      mismatchedCustomerCount,
+      status: mismatchedCustomerCount > 0
+        ? 'provider_mismatch'
+        : current.providerCustomerCount > 0
+          ? 'provider_synchronized'
+          : 'configured_bootstrap'
+    };
   }
 
   private registerBaselineFor(
@@ -1022,13 +1196,27 @@ export class SteamaOperationsService {
     const startedAt = new Date().toISOString();
     await this.meterArchiveRepository.beginSync(runId, startedAt);
     try {
-      const [readings, metersPayload] = await Promise.all([
+      const [readings, metersPayload, customersPayload] = await Promise.all([
         this.getReadingWindow(true, false),
-        this.client.request<unknown>({ path: '/meters/', query: { page_size: 500 } })
+        this.client.request<unknown>({ path: '/meters/', query: { page_size: 500 } }),
+        this.client.request<unknown>({ path: '/customers/', query: { page_size: 500 } }).catch(() => null)
       ]);
       const archiveReadings = this.toArchiveReadings(readings, 'utility_reading');
       const observedAt = new Date().toISOString();
       const meters = asCollection(metersPayload).records.map((record) => normalizeMeter(record, Date.now()));
+      const meterNumbersByCustomer = new Map<string, string[]>();
+      for (const meter of meters) {
+        if (!meter.customerId) continue;
+        const meterNumbers = meterNumbersByCustomer.get(meter.customerId) ?? [];
+        if (meter.meterNumber && !meterNumbers.includes(meter.meterNumber)) meterNumbers.push(meter.meterNumber);
+        meterNumbersByCustomer.set(meter.customerId, meterNumbers);
+      }
+      if (customersPayload !== null) {
+        const customers = asCollection(customersPayload).records.map((record) =>
+          normalizeCustomer(record, meterNumbersByCustomer)
+        );
+        await this.synchronizeTariff(customers, observedAt);
+      }
       const statuses = meters.map((meter) => ({
         observedAt,
         providerMeterId: meter.providerId,
@@ -1191,9 +1379,18 @@ export class SteamaOperationsService {
       }
       meterNumbersByCustomer.set(meter.customerId, meterNumbers);
     }
-    const customers = customerCollection.records.map((record) =>
+    const normalizedCustomers = customerCollection.records.map((record) =>
       normalizeCustomer(record, meterNumbersByCustomer)
     );
+    const retrievedAt = new Date(now).toISOString();
+    const tariffSync = await this.synchronizeTariff(normalizedCustomers, retrievedAt);
+    const customers = tariffSync.customers;
+    if (tariffSync.consensus.mismatchedCustomerCount > 0) {
+      warnings.push('provider_tariff_mismatch');
+    }
+    if (tariffSync.consensus.unpricedCustomerCount > 0) {
+      warnings.push('provider_tariff_missing_for_some_customers');
+    }
     let meters = reconcileMeterAssignments(providerMeters, customers);
     try {
       const readingWindow = await this.getReadingWindow(forceRefresh);
@@ -1211,8 +1408,6 @@ export class SteamaOperationsService {
       'generator_source',
       'distribution_or_bulk'
     ];
-    const retrievedAt = new Date(now).toISOString();
-
     const overview: SteamaOperationsOverview = {
       dataSource: {
         provider: 'SteamaCo',
@@ -1380,7 +1575,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `energy-mix-v3:${cacheKey}`;
+    const snapshotKey = `energy-mix-v5:${await this.tariffSnapshotVersion()}:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaEnergyMix>(snapshotKey);
       if (retained && retained.value.summary.solarVsGrid && retained.value.summary.solarVsGenerator) {
@@ -1413,6 +1608,11 @@ export class SteamaOperationsService {
       throw new Error('invalid_energy_mix_range');
     }
     const overview = await this.getOverview(forceRefresh);
+    const tariffVersions = await this.tariffRepository.listForRange(
+      TARIFF_SCOPE_KEY,
+      new Date(rangeStartMs).toISOString(),
+      new Date(rangeEndMs).toISOString()
+    );
     const sourceMeters = overview.meters.filter(
       (meter): meter is SteamaMeterSummary & {
         operationalRole: 'solar_source' | 'grid_source' | 'generator_source';
@@ -1511,6 +1711,12 @@ export class SteamaOperationsService {
         if (role === 'solar_source') bucket.solarKwh += usageKwh;
         if (role === 'grid_source') bucket.gridKwh += usageKwh;
         if (role === 'generator_source') bucket.generatorKwh += usageKwh;
+        const tariff = tariffAt(tariffVersions, intervalKey);
+        const valueNgn = tariff ? usageKwh * tariff.retailNgnPerKwh : 0;
+        bucket.energyValueNgn += valueNgn;
+        if (role === 'solar_source') bucket.solarValueNgn += valueNgn;
+        if (role === 'grid_source') bucket.gridValueNgn += valueNgn;
+        if (role === 'generator_source') bucket.generatorValueNgn += valueNgn;
         bucket.registerRecoveredKwh += recoveredIntervals.get(intervalKey) ?? 0;
       }
       return roundEnergy(total);
@@ -1541,6 +1747,10 @@ export class SteamaOperationsService {
       bucket.gridKwh = roundEnergy(bucket.gridKwh);
       bucket.generatorKwh = roundEnergy(bucket.generatorKwh);
       bucket.registerRecoveredKwh = roundEnergy(bucket.registerRecoveredKwh);
+      bucket.energyValueNgn = roundMoney(bucket.energyValueNgn);
+      bucket.solarValueNgn = roundMoney(bucket.solarValueNgn);
+      bucket.gridValueNgn = roundMoney(bucket.gridValueNgn);
+      bucket.generatorValueNgn = roundMoney(bucket.generatorValueNgn);
       bucket.totalKwh = roundEnergy(bucket.solarKwh + bucket.gridKwh + bucket.generatorKwh);
       bucket.solarPercent = bucket.totalKwh > 0 ? roundPercent((bucket.solarKwh / bucket.totalKwh) * 100) : 0;
       bucket.gridPercent = bucket.totalKwh > 0 ? roundPercent((bucket.gridKwh / bucket.totalKwh) * 100) : 0;
@@ -1676,7 +1886,11 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`energy-mix-v3:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(
+      `energy-mix-v5:${await this.tariffSnapshotVersion()}:${cacheKey}`,
+      result,
+      result.dataSource.retrievedAt
+    );
     return result;
   }
 
@@ -1691,7 +1905,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `revenue-v4:${cacheKey}`;
+    const snapshotKey = `revenue-v6:${await this.tariffSnapshotVersion()}:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaRevenueAnalysis>(snapshotKey);
       if (retained) {
@@ -1731,6 +1945,7 @@ export class SteamaOperationsService {
     const usageCharges = usageChargesResult.value;
     const payments = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
     const overview = overviewResult.value;
+    const tariff = await this.tariffContext(energyMix.range.from, energyMix.range.to, overview.customers);
     const roleByMeterNumber = new Map(
       overview.meters.map((meter) => [canonicalMeterNumber(meter.meterNumber), meter.operationalRole])
     );
@@ -1773,11 +1988,11 @@ export class SteamaOperationsService {
       solarAttributedChargeNgn: 0,
       gridAttributedChargeNgn: 0,
       generatorAttributedChargeNgn: 0,
-      energyValueNgn: 0,
-      accruedEnergyRevenueNgn: 0,
-      solarAccruedRevenueNgn: 0,
-      sharedSupplyAccruedRevenueNgn: 0,
-      generatorAccruedRevenueNgn: 0
+      energyValueNgn: bucket.energyValueNgn,
+      accruedEnergyRevenueNgn: bucket.energyValueNgn,
+      solarAccruedRevenueNgn: bucket.solarValueNgn,
+      sharedSupplyAccruedRevenueNgn: bucket.gridValueNgn,
+      generatorAccruedRevenueNgn: bucket.generatorValueNgn
     }));
     const bucketsByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
     let latestCustomerUsageChargeAt: string | null = null;
@@ -1832,11 +2047,6 @@ export class SteamaOperationsService {
       if (bucket.recordedPaymentNgn !== null) {
         bucket.recordedPaymentNgn = roundMoney(Math.max(0, bucket.recordedPaymentNgn));
       }
-      bucket.energyValueNgn = roundMoney(bucket.totalKwh * this.retailTariffNgnPerKwh);
-      bucket.accruedEnergyRevenueNgn = bucket.energyValueNgn;
-      bucket.solarAccruedRevenueNgn = roundMoney(bucket.solarKwh * this.retailTariffNgnPerKwh);
-      bucket.sharedSupplyAccruedRevenueNgn = roundMoney(bucket.gridKwh * this.retailTariffNgnPerKwh);
-      bucket.generatorAccruedRevenueNgn = roundMoney(bucket.generatorKwh * this.retailTariffNgnPerKwh);
       if (bucket.totalKwh > 0) {
         bucket.solarAttributedChargeNgn = roundMoney(
           bucket.customerUsageChargeNgn * (bucket.solarKwh / bucket.totalKwh)
@@ -1886,11 +2096,14 @@ export class SteamaOperationsService {
         : 'AEDC grid and generator energy are reported separately when both dedicated source meters are configured.',
       'Customer UCH and PAY entries are retained as separate ledger and collections evidence; they do not drive accrued energy revenue.',
       'Actual AEDC, generator and solar operating costs are not configured. Energy revenue is an operational valuation, not a supplier payable or profit figure.',
-      `The configured Band A retail rate is NGN ${this.retailTariffNgnPerKwh.toFixed(2)} per kWh. Historical effective-date treatment remains provisional until an effective date is configured.`,
+      `${tariff.versions.length} effective tariff version(s) were applied to this reporting window. The current ${tariff.current.tariffBand} rate is NGN ${tariff.current.retailNgnPerKwh.toFixed(2)} per kWh.`,
       ...energyMix.warnings
     ];
     if (!collectionsAvailable) {
       warnings.unshift('No customer-load PAY transaction was returned for this period, so actual cash collections are unavailable.');
+    }
+    if (tariff.mismatchedCustomerCount > 0) {
+      warnings.unshift(`${tariff.mismatchedCustomerCount} customer tariff(s) differ from the current effective MSM rate; the existing tariff version remains active until the provider accounts agree.`);
     }
     if (paymentsResult.status === 'rejected') {
       warnings.unshift('The provider payment ledger could not be retrieved; collections remain unavailable.');
@@ -1913,11 +2126,14 @@ export class SteamaOperationsService {
       period,
       range: energyMix.range,
       tariff: {
-        retailNgnPerKwh: this.retailTariffNgnPerKwh,
+        retailNgnPerKwh: tariff.current.retailNgnPerKwh,
+        tariffBand: tariff.current.tariffBand,
         currency: 'NGN',
-        status: 'provisional',
-        effectiveFrom: this.tariffEffectiveFrom,
-        source: 'MSM controlled configuration'
+        status: tariff.status,
+        effectiveFrom: tariff.current.effectiveFrom,
+        source: tariff.current.source,
+        versionsApplied: tariff.versions.length,
+        mismatchedCustomerCount: tariff.mismatchedCustomerCount
       },
       sourceTopology: energyMix.sourceTopology,
       costs: {
@@ -1945,19 +2161,19 @@ export class SteamaOperationsService {
         recordedPaymentNgn,
         paymentTransactions: customerPaymentTransactions,
         collectionsAvailable,
-        energyValueNgn: roundMoney(energyMix.summary.totalKwh * this.retailTariffNgnPerKwh),
-        accruedEnergyRevenueNgn: roundMoney(energyMix.summary.totalKwh * this.retailTariffNgnPerKwh),
-        solarAccruedRevenueNgn: roundMoney(energyMix.summary.solarKwh * this.retailTariffNgnPerKwh),
-        sharedSupplyAccruedRevenueNgn: roundMoney(energyMix.summary.gridKwh * this.retailTariffNgnPerKwh),
-        generatorAccruedRevenueNgn: roundMoney(energyMix.summary.generatorKwh * this.retailTariffNgnPerKwh),
+        energyValueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.energyValueNgn, 0)),
+        accruedEnergyRevenueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.accruedEnergyRevenueNgn, 0)),
+        solarAccruedRevenueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.solarAccruedRevenueNgn, 0)),
+        sharedSupplyAccruedRevenueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.sharedSupplyAccruedRevenueNgn, 0)),
+        generatorAccruedRevenueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.generatorAccruedRevenueNgn, 0)),
         solarAttributedChargeNgn,
         gridAttributedChargeNgn,
         generatorAttributedChargeNgn,
         unallocatedCustomerChargeNgn,
         chargeAllocationCoveragePercent,
-        solarEnergyValueNgn: roundMoney(energyMix.summary.solarKwh * this.retailTariffNgnPerKwh),
-        gridEnergyValueNgn: roundMoney(energyMix.summary.gridKwh * this.retailTariffNgnPerKwh),
-        generatorEnergyValueNgn: roundMoney(energyMix.summary.generatorKwh * this.retailTariffNgnPerKwh),
+        solarEnergyValueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.solarAccruedRevenueNgn, 0)),
+        gridEnergyValueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.sharedSupplyAccruedRevenueNgn, 0)),
+        generatorEnergyValueNgn: roundMoney(buckets.reduce((sum, bucket) => sum + bucket.generatorAccruedRevenueNgn, 0)),
         solarKwh: energyMix.summary.solarKwh,
         gridKwh: energyMix.summary.gridKwh,
         generatorKwh: energyMix.summary.generatorKwh,
@@ -1980,7 +2196,11 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`revenue-v4:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(
+      `revenue-v6:${await this.tariffSnapshotVersion()}:${cacheKey}`,
+      result,
+      result.dataSource.retrievedAt
+    );
     return result;
   }
 
@@ -1995,7 +2215,7 @@ export class SteamaOperationsService {
       return this.asCached(cached.value);
     }
 
-    const snapshotKey = `floors-v2:${cacheKey}`;
+    const snapshotKey = `floors-v4:${await this.tariffSnapshotVersion()}:${cacheKey}`;
     if (!forceRefresh) {
       const retained = await this.getRetainedSnapshot<SteamaFloorAnalysis>(snapshotKey);
       if (retained) {
@@ -2027,6 +2247,11 @@ export class SteamaOperationsService {
     }
 
     const overview = await this.getOverview(forceRefresh);
+    const tariff = await this.tariffContext(
+      new Date(range.start).toISOString(),
+      new Date(range.end).toISOString(),
+      overview.customers
+    );
     const metersByCustomer = new Map<string, SteamaMeterSummary[]>();
     for (const meter of overview.meters) {
       if (!meter.customerId) continue;
@@ -2129,6 +2354,7 @@ export class SteamaOperationsService {
         effectiveFrom: string | null;
         effectiveTo: string | null;
         usageKwh: number;
+        estimatedValueNgn: number;
         observedIntervals: number;
       }>();
       const addAttribution = (
@@ -2140,19 +2366,24 @@ export class SteamaOperationsService {
           effectiveTo: string | null;
         },
         usage: number,
+        valueNgn: number,
         observed: boolean
       ): void => {
         const item = attributionByKey.get(key) ?? {
           ...details,
           usageKwh: 0,
+          estimatedValueNgn: 0,
           observedIntervals: 0
         };
         item.usageKwh += usage;
+        item.estimatedValueNgn += valueNgn;
         if (observed) item.observedIntervals += 1;
         attributionByKey.set(key, item);
       };
       for (const reading of uniqueReadings) {
         const intervalMs = new Date(reading.intervalStart).getTime();
+        const effectiveTariff = tariffAt(tariff.versions, reading.intervalStart);
+        const rate = effectiveTariff?.retailNgnPerKwh ?? tariff.current.retailNgnPerKwh;
         const tenancy = tenancyTimeline?.tenancies.find((entry) => {
           const fromMs = new Date(entry.effectiveFrom).getTime();
           const toMs = entry.effectiveTo ? new Date(entry.effectiveTo).getTime() : Number.POSITIVE_INFINITY;
@@ -2168,6 +2399,7 @@ export class SteamaOperationsService {
               effectiveTo: tenancy?.effectiveTo ?? null
             },
             reading.recordedUsageKwh,
+            reading.recordedUsageKwh * rate,
             true
           );
         }
@@ -2181,6 +2413,7 @@ export class SteamaOperationsService {
               effectiveTo: null
             },
             reading.registerRecoveredKwh,
+            reading.registerRecoveredKwh * rate,
             false
           );
         }
@@ -2188,8 +2421,14 @@ export class SteamaOperationsService {
       const tenantUsage = Array.from(attributionByKey.values()).map((item) => ({
         ...item,
         usageKwh: roundEnergy(item.usageKwh),
-        estimatedValueNgn: roundMoney(item.usageKwh * this.retailTariffNgnPerKwh)
+        estimatedValueNgn: roundMoney(item.estimatedValueNgn)
       }));
+      const estimatedValueNgn = roundMoney(
+        uniqueReadings.reduce((sum, reading) => {
+          const version = tariffAt(tariff.versions, reading.intervalStart);
+          return sum + reading.usageKwh * (version?.retailNgnPerKwh ?? tariff.current.retailNgnPerKwh);
+        }, 0)
+      );
       const attributedUsageKwh = roundEnergy(
         tenantUsage.filter((item) => item.source !== 'unattributed').reduce((sum, item) => sum + item.usageKwh, 0)
       );
@@ -2229,7 +2468,7 @@ export class SteamaOperationsService {
         onlineMeterCount: customerMeters.filter((meter) => meter.connectivity === 'online').length,
         usageKwh,
         registerRecoveredKwh,
-        estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
+        estimatedValueNgn,
         observedIntervals: observedIntervalCount,
         expectedIntervals,
         coveragePercent: expectedIntervals > 0
@@ -2286,7 +2525,9 @@ export class SteamaOperationsService {
           ? roundPercent((attributedUsageKwh / usageKwh) * 100)
           : 0,
         sharePercent: totalUsageKwh > 0 ? roundPercent((usageKwh / totalUsageKwh) * 100) : 0,
-        estimatedValueNgn: roundMoney(usageKwh * this.retailTariffNgnPerKwh),
+        estimatedValueNgn: roundMoney(
+          floorPositions.reduce((sum, position) => sum + position.estimatedValueNgn, 0)
+        ),
         observedIntervals,
         expectedIntervals,
         coveragePercent: expectedIntervals > 0 ? roundPercent((observedIntervals / expectedIntervals) * 100) : 0
@@ -2316,7 +2557,7 @@ export class SteamaOperationsService {
       'Tenant history begins when MSM first observes a position or when management records an earlier effective date; earlier usage remains explicitly unattributed.',
       'Legacy position codes are interpreted using the observed Na-Aka Hub convention: G codes are Ground Floor, F0 codes are First Floor, and F2–F5 identify Floors 2–5.',
       'SteamaCo exposes limited timestamped interval history; cumulative-register recovery preserves total energy but cannot reconstruct the original missing hours.',
-      'Estimated Naira values use the provisional MSM retail rate and are not cash collections.'
+      'Estimated Naira values use the effective-dated retail tariff for each recorded or recovered interval and are not cash collections.'
     ];
     if (registerRecoveredKwh > 0) {
       warnings.unshift(
@@ -2335,6 +2576,9 @@ export class SteamaOperationsService {
     if (positions.some((position) => position.providerTenantDrift)) {
       warnings.push('A SteamaCo tenant-name change differs from an approved MSM tenancy record and requires management review.');
     }
+    if (tariff.mismatchedCustomerCount > 0) {
+      warnings.push(`${tariff.mismatchedCustomerCount} customer tariff(s) differ from the current effective MSM tariff.`);
+    }
 
     const result: SteamaFloorAnalysis = {
       dataSource: {
@@ -2352,9 +2596,14 @@ export class SteamaOperationsService {
         timezone: 'Africa/Lagos'
       },
       tariff: {
-        retailNgnPerKwh: this.retailTariffNgnPerKwh,
+        retailNgnPerKwh: tariff.current.retailNgnPerKwh,
+        tariffBand: tariff.current.tariffBand,
         currency: 'NGN',
-        status: 'provisional'
+        status: tariff.status,
+        effectiveFrom: tariff.current.effectiveFrom,
+        source: tariff.current.source,
+        versionsApplied: tariff.versions.length,
+        mismatchedCustomerCount: tariff.mismatchedCustomerCount
       },
       summary: {
         totalPositions: positions.length,
@@ -2374,7 +2623,7 @@ export class SteamaOperationsService {
           : 0,
         classifiedUsageKwh: roundEnergy(totalUsageKwh - unclassifiedUsageKwh),
         unclassifiedUsageKwh,
-        estimatedValueNgn: roundMoney(totalUsageKwh * this.retailTariffNgnPerKwh),
+        estimatedValueNgn: roundMoney(positions.reduce((sum, position) => sum + position.estimatedValueNgn, 0)),
         observedIntervals,
         expectedIntervals,
         coveragePercent: expectedIntervals > 0 ? roundPercent((observedIntervals / expectedIntervals) * 100) : 0
@@ -2389,12 +2638,16 @@ export class SteamaOperationsService {
       value: result,
       expiresAt: now + Math.max(this.cacheTtlMs, ENERGY_MIX_CACHE_TTL_MS)
     });
-    await this.retainSnapshot(`floors-v2:${cacheKey}`, result, result.dataSource.retrievedAt);
+    await this.retainSnapshot(
+      `floors-v4:${await this.tariffSnapshotVersion()}:${cacheKey}`,
+      result,
+      result.dataSource.retrievedAt
+    );
     return result;
   }
 
   async getCustomer(providerId: string): Promise<SteamaCustomerDetail> {
-    const snapshotKey = `customer:${providerId}`;
+    const snapshotKey = `customer-v2:${await this.tariffSnapshotVersion()}:${providerId}`;
     const retained = await this.getRetainedSnapshot<SteamaCustomerDetail>(snapshotKey);
     if (retained) {
       if (this.snapshotIsStale(retained.retrievedAt, this.cacheTtlMs)) {
@@ -2418,7 +2671,9 @@ export class SteamaOperationsService {
     const meterNumbers = meterRecords
       .map((record) => stringValue(firstValue(record, ['reference', 'meter_number', 'number'])))
       .filter(Boolean);
-    const summary = normalizeCustomer(customerPayload, new Map([[providerId, meterNumbers]]));
+    const rawSummary = normalizeCustomer(customerPayload, new Map([[providerId, meterNumbers]]));
+    const tariffSync = await this.synchronizeTariff([], new Date().toISOString());
+    const summary = applyCustomerTariff(rawSummary, tariffSync.current);
     const balances = asCollection(balancesPayload).records
       .map((record) => ({
         timestamp: isoDateValue(firstValue(record, ['timestamp', 'created_at', 'created'])) ?? '',
@@ -2453,12 +2708,22 @@ export class SteamaOperationsService {
       },
       warnings: [
         'The provider returns at most the requested transaction page; totals shown here describe only the retrieved window.',
+        ...(summary.energyBalanceSource === 'derived_from_monetary_balance'
+          ? [`Energy balance is derived from the monetary balance at NGN ${summary.energyBalanceRateNgnPerKwh?.toFixed(2)} per kWh because the provider energy balance is missing or inconsistent.`]
+          : []),
+        ...(summary.tariffMismatch
+          ? ['The customer energy price differs from the current effective MSM tariff and requires reconciliation.']
+          : []),
         ...(summary.accountBalance !== null && summary.accountBalance < 0
           ? ['A negative account balance means provider-posted charges currently exceed credited payments on this account.']
           : [])
       ]
     };
-    await this.retainSnapshot(`customer:${providerId}`, result, new Date().toISOString());
+    await this.retainSnapshot(
+      `customer-v2:${await this.tariffSnapshotVersion()}:${providerId}`,
+      result,
+      new Date().toISOString()
+    );
     return result;
   }
 

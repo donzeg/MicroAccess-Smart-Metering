@@ -56,8 +56,12 @@ export interface CustomerSummary {
 	assignedMeterNumber: string | null;
 	accountBalance: number | null;
 	energyBalanceKwh: number | null;
+	providerEnergyBalanceKwh: number | null;
+	energyBalanceSource: 'provider' | 'derived_from_monetary_balance' | 'unavailable';
+	energyBalanceRateNgnPerKwh: number | null;
 	energyPrice: number | null;
 	tariffBand: string;
+	tariffMismatch: boolean;
 	controlType: string;
 }
 
@@ -189,7 +193,16 @@ export interface FloorAnalysis {
 	site: { name: 'Na-Aka Hub'; structure: 'Ground floor plus Floors 1–5' };
 	period: EnergyMixPeriod;
 	range: { from: string; to: string; timezone: 'Africa/Lagos' };
-	tariff: { retailNgnPerKwh: number; currency: 'NGN'; status: 'provisional' };
+	tariff: {
+		retailNgnPerKwh: number;
+		tariffBand: string;
+		currency: 'NGN';
+		status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+		effectiveFrom: string;
+		source: 'msm_configuration' | 'steama_observation';
+		versionsApplied: number;
+		mismatchedCustomerCount: number;
+	};
 	summary: {
 		totalPositions: number;
 		classifiedPositions: number;
@@ -258,6 +271,10 @@ export interface EnergyMixBucket {
 	generatorKwh: number;
 	totalKwh: number;
 	registerRecoveredKwh: number;
+	energyValueNgn: number;
+	solarValueNgn: number;
+	gridValueNgn: number;
+	generatorValueNgn: number;
 	solarPercent: number;
 	gridPercent: number;
 	generatorPercent: number;
@@ -384,10 +401,13 @@ export interface RevenueAnalysis {
 	range: { from: string; to: string; timezone: 'Africa/Lagos' };
 	tariff: {
 		retailNgnPerKwh: number;
+		tariffBand: string;
 		currency: 'NGN';
-		status: 'provisional';
-		effectiveFrom: string | null;
-		source: 'MSM controlled configuration';
+		status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+		effectiveFrom: string;
+		source: 'msm_configuration' | 'steama_observation';
+		versionsApplied: number;
+		mismatchedCustomerCount: number;
 	};
 	sourceTopology: SourceTopology;
 	costs: {

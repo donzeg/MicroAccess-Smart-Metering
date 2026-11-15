@@ -91,7 +91,7 @@
 	{:else if result && summary}
 		<section class="kpis">
 			<article><span class="kpi-icon"><Gauge size={18} /></span><div><p>Tenant-meter usage</p><strong>{formatNumber(summary.totalUsageKwh)} <small>kWh</small></strong><span>Interval consumption only</span></div></article>
-			<article><span class="kpi-icon money"><CircleDollarSign size={18} /></span><div><p>Provisional energy value</p><strong>{formatNaira(summary.estimatedValueNgn)}</strong><span>{formatNaira(result.tariff.retailNgnPerKwh)} per kWh</span></div></article>
+			<article><span class="kpi-icon money"><CircleDollarSign size={18} /></span><div><p>Provisional energy value</p><strong>{formatNaira(summary.estimatedValueNgn)}</strong><span>{result.tariff.versionsApplied} effective tariff version(s) · current {formatNaira(result.tariff.retailNgnPerKwh)}/kWh</span></div></article>
 			<article><span class="kpi-icon"><Layers3 size={18} /></span><div><p>Permanent positions</p><strong>{summary.classifiedPositions} <small>of {summary.totalPositions}</small></strong><span>{summary.unclassifiedPositions} unclassified</span></div></article>
 			<article><span class="kpi-icon"><Users size={18} /></span><div><p>Metered positions</p><strong>{summary.meteredPositions} <small>of {summary.totalPositions}</small></strong><span>{summary.reportingPositions} reported in this window</span></div></article>
 			<article><span class="kpi-icon signal"><RadioTower size={18} /></span><div><p>Reading coverage</p><strong>{summary.coveragePercent.toFixed(1)}<small>%</small></strong><span>{summary.onlineMeters} of {summary.totalMeters} meters online now</span></div></article>

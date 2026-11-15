@@ -104,7 +104,7 @@
 		{/if}
 		<section class="kpis">
 			<article><span class="kpi-icon"><Gauge size={18} /></span><div><p>Floor consumption</p><strong>{formatNumber(floor.usageKwh)} <small>kWh</small></strong><span>{floor.sharePercent.toFixed(1)}% of recorded tenant usage</span></div></article>
-			<article><span class="kpi-icon money"><CircleDollarSign size={18} /></span><div><p>Provisional value</p><strong>{formatNaira(floor.estimatedValueNgn)}</strong><span>{formatNaira(result.tariff.retailNgnPerKwh)} per kWh</span></div></article>
+			<article><span class="kpi-icon money"><CircleDollarSign size={18} /></span><div><p>Provisional value</p><strong>{formatNaira(floor.estimatedValueNgn)}</strong><span>Effective-dated valuation · current {formatNaira(result.tariff.retailNgnPerKwh)}/kWh</span></div></article>
 			<article><span class="kpi-icon"><Store size={18} /></span><div><p>Permanent positions</p><strong>{floor.positionCount}</strong><span>{namedTenants} named tenants recorded</span></div></article>
 			<article><span class="kpi-icon"><RadioTower size={18} /></span><div><p>Assigned meters</p><strong>{floor.onlineMeterCount} <small>of {floor.meterCount} online</small></strong><span>{floor.meteredPositionCount} metered positions</span></div></article>
 			<article><span class="kpi-icon"><Database size={18} /></span><div><p>Reading coverage</p><strong>{floor.coveragePercent.toFixed(1)}<small>%</small></strong><span>{floor.reportingPositionCount} positions reported</span></div></article>

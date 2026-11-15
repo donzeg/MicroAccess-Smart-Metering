@@ -44,6 +44,10 @@ const MIGRATIONS: MigrationDefinition[] = [
   {
     id: '0007_provider_transaction_sync_state',
     fileName: 'provider_transaction_sync_state.postgres.ddl'
+  },
+  {
+    id: '0008_tariff_versions',
+    fileName: 'tariff_versions.postgres.ddl'
   }
 ];
 

@@ -66,7 +66,8 @@ describeWhenPostgres('Phase 1 PostgreSQL startup', () => {
         '0004_meter_reading_archive',
         '0005_operational_snapshots',
         '0006_provider_transaction_archive',
-        '0007_provider_transaction_sync_state'
+        '0007_provider_transaction_sync_state',
+        '0008_tariff_versions'
       ]);
     } finally {
       await pool.end();

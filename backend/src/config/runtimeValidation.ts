@@ -14,6 +14,8 @@ export interface RuntimeConfiguration {
   steamaBaseUrl: string;
   steamaUsername: string;
   steamaPassword: string;
+  retailTariffNgnPerKwh?: number | null;
+  retailTariffEffectiveFrom?: string | null;
 }
 
 const PLACEHOLDER_VALUES = new Set([
@@ -116,6 +118,15 @@ export const validateRuntimeConfiguration = (config: RuntimeConfiguration): void
     } catch {
       issues.push('STEAMA_BASE_URL');
     }
+  }
+
+  const hasTariffBootstrapRate = config.retailTariffNgnPerKwh !== null && config.retailTariffNgnPerKwh !== undefined;
+  const hasTariffBootstrapEffectiveFrom = Boolean(config.retailTariffEffectiveFrom);
+  if (hasTariffBootstrapRate !== hasTariffBootstrapEffectiveFrom) {
+    issues.push('MSM_RETAIL_TARIFF_BOOTSTRAP_PAIR');
+  }
+  if (config.retailTariffEffectiveFrom && Number.isNaN(new Date(config.retailTariffEffectiveFrom).getTime())) {
+    issues.push('MSM_RETAIL_TARIFF_EFFECTIVE_FROM');
   }
 
   if (issues.length > 0) {

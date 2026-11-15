@@ -16,6 +16,8 @@ import { PgMeterArchiveRepository } from './repositories/pgMeterArchiveRepositor
 import { PgPurchaseAuditLogRepository } from './repositories/pgPurchaseAuditLogRepository.js';
 import { createPgPool, runPgMigrations } from './repositories/pgPool.js';
 import { PgPurchaseRepository } from './repositories/pgPurchaseRepository.js';
+import { InMemoryTariffRepository } from './repositories/inMemoryTariffRepository.js';
+import { PgTariffRepository } from './repositories/pgTariffRepository.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -66,6 +68,7 @@ export const buildApp = (): FastifyInstance => {
   const meterArchiveRepository = pool && readOnlyIntegrationEnabled
     ? new PgMeterArchiveRepository(pool)
     : null;
+  const tariffRepository = pool ? new PgTariffRepository(pool) : new InMemoryTariffRepository();
 
   const steamaOperationsService = readOnlyIntegrationEnabled
     ? new SteamaOperationsService(
@@ -80,7 +83,9 @@ export const buildApp = (): FastifyInstance => {
         60_000,
         {
           retailTariffNgnPerKwh: env.retailTariffNgnPerKwh,
+          retailTariffBand: env.retailTariffBand,
           tariffEffectiveFrom: env.retailTariffEffectiveFrom,
+          tariffRepository,
           gridSourceIncludesGenerator: env.gridSourceIncludesGenerator,
           meterRegisterBaselines: env.meterRegisterBaselines,
           floorTenancyRepository: pool

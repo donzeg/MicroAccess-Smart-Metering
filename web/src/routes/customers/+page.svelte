@@ -76,7 +76,7 @@
 					<td><a href={`/customers/${customer.providerId}`}><strong>{customer.displayName}</strong><span>{customer.accountNumber || 'No account number'} · {customer.siteName}</span></a></td>
 					<td>{#if assignedMeterId(customer.assignedMeterNumber)}<a class="meter-link" href={`/meters/${assignedMeterId(customer.assignedMeterNumber)}`}><strong>{customer.assignedMeterNumber}</strong><span>Open meter record</span></a>{:else}{customer.assignedMeterNumber ?? 'Unassigned'}{/if}</td>
 					<td class:negative={(customer.accountBalance ?? 0) < 0}><strong>{formatNaira(customer.accountBalance)}</strong><span>Provider monetary ledger</span></td>
-					<td>{formatNumber(customer.energyBalanceKwh)} kWh</td><td>{customer.tariffBand}<span>{customer.energyPrice === null ? 'No price' : `${formatNaira(customer.energyPrice)}/kWh`}</span></td>
+					<td><strong>{formatNumber(customer.energyBalanceKwh)} kWh</strong><span>{customer.energyBalanceSource === 'derived_from_monetary_balance' ? `Derived at ${formatNaira(customer.energyBalanceRateNgnPerKwh)}/kWh` : customer.energyBalanceSource === 'provider' ? 'Provider energy balance' : 'Not available'}</span></td><td>{customer.tariffBand}<span>{customer.energyPrice === null ? 'No price' : `${formatNaira(customer.energyPrice)}/kWh`}{customer.tariffMismatch ? ' · Mismatch' : ''}</span></td>
 					<td><a class="open" href={`/customers/${customer.providerId}`}><ChevronRight size={17} /></a></td>
 				</tr>{:else}<tr><td colspan="6" class="empty">No account matches the current filters.</td></tr>{/each}
 			</tbody></table></div>

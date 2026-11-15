@@ -12,6 +12,12 @@ const toNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const toOptionalPositiveNumber = (value: string | undefined): number | null => {
+  if (!value?.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const toBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (!value) {
     return fallback;
@@ -83,7 +89,8 @@ export const env = {
   managementOpsLimitPerMinute: toNumber(process.env.MANAGEMENT_OPS_LIMIT_PER_MINUTE, 120),
   readsLimitPerMinute: toNumber(process.env.READS_LIMIT_PER_MINUTE, 240),
   providerRateLimitRps: toNumber(process.env.PROVIDER_RATE_LIMIT_RPS, 10),
-  retailTariffNgnPerKwh: toNumber(process.env.MSM_RETAIL_TARIFF_NGN_PER_KWH, 203),
+  retailTariffNgnPerKwh: toOptionalPositiveNumber(process.env.MSM_RETAIL_TARIFF_NGN_PER_KWH),
+  retailTariffBand: process.env.MSM_RETAIL_TARIFF_BAND?.trim() || 'A',
   retailTariffEffectiveFrom: process.env.MSM_RETAIL_TARIFF_EFFECTIVE_FROM?.trim() || null,
   gridSourceIncludesGenerator: toBoolean(process.env.MSM_GRID_SOURCE_INCLUDES_GENERATOR, true),
   meterRegisterBaselines: toMeterRegisterBaselines(process.env.MSM_METER_REGISTER_BASELINES_JSON),

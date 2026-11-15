@@ -27,6 +27,30 @@ describe('validateRuntimeConfiguration', () => {
     expect(() => validateRuntimeConfiguration(validConfiguration())).not.toThrow();
   });
 
+  it('requires an effective date whenever a bootstrap tariff is configured', () => {
+    expect(() =>
+      validateRuntimeConfiguration(
+        validConfiguration({ retailTariffNgnPerKwh: 203, retailTariffEffectiveFrom: null })
+      )
+    ).toThrow(/MSM_RETAIL_TARIFF_BOOTSTRAP_PAIR/);
+    expect(() =>
+      validateRuntimeConfiguration(
+        validConfiguration({
+          retailTariffNgnPerKwh: 203,
+          retailTariffEffectiveFrom: '2025-12-31T23:00:00.000Z'
+        })
+      )
+    ).not.toThrow();
+  });
+
+  it('rejects an invalid bootstrap tariff effective date', () => {
+    expect(() =>
+      validateRuntimeConfiguration(
+        validConfiguration({ retailTariffNgnPerKwh: 203, retailTariffEffectiveFrom: 'not-a-date' })
+      )
+    ).toThrow(/MSM_RETAIL_TARIFF_EFFECTIVE_FROM/);
+  });
+
   it('rejects production prototype mode, in-memory storage, placeholders and insecure provider URL', () => {
     try {
       validateRuntimeConfiguration(

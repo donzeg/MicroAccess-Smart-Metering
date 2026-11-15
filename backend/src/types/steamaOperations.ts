@@ -61,8 +61,12 @@ export interface SteamaCustomerSummary {
   assignedMeterNumber: string | null;
   accountBalance: number | null;
   energyBalanceKwh: number | null;
+  providerEnergyBalanceKwh: number | null;
+  energyBalanceSource: 'provider' | 'derived_from_monetary_balance' | 'unavailable';
+  energyBalanceRateNgnPerKwh: number | null;
   energyPrice: number | null;
   tariffBand: string;
+  tariffMismatch: boolean;
   controlType: string;
 }
 
@@ -174,8 +178,13 @@ export interface SteamaFloorAnalysis {
   };
   tariff: {
     retailNgnPerKwh: number;
+    tariffBand: string;
     currency: 'NGN';
-    status: 'provisional';
+    status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+    effectiveFrom: string;
+    source: 'msm_configuration' | 'steama_observation';
+    versionsApplied: number;
+    mismatchedCustomerCount: number;
   };
   summary: {
     totalPositions: number;
@@ -253,6 +262,10 @@ export interface SteamaEnergyMixBucket {
   generatorKwh: number;
   totalKwh: number;
   registerRecoveredKwh: number;
+  energyValueNgn: number;
+  solarValueNgn: number;
+  gridValueNgn: number;
+  generatorValueNgn: number;
   solarPercent: number;
   gridPercent: number;
   generatorPercent: number;
@@ -390,10 +403,13 @@ export interface SteamaRevenueAnalysis {
   };
   tariff: {
     retailNgnPerKwh: number;
+    tariffBand: string;
     currency: 'NGN';
-    status: 'provisional';
-    effectiveFrom: string | null;
-    source: 'MSM controlled configuration';
+    status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+    effectiveFrom: string;
+    source: 'msm_configuration' | 'steama_observation';
+    versionsApplied: number;
+    mismatchedCustomerCount: number;
   };
   sourceTopology: SteamaSourceTopology;
   costs: {
