@@ -1,15 +1,22 @@
 <script lang="ts">
 	import { AlertTriangle, ArrowLeft, Clock3, Gauge, Radio, Zap } from '@lucide/svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import InfoPopover from '#lib/components/InfoPopover.svelte';
 	import LineChart from '#lib/components/LineChart.svelte';
 	import PageHeader from '#lib/components/PageHeader.svelte';
+	import Pagination from '#lib/components/Pagination.svelte';
 	import StatusPill from '#lib/components/StatusPill.svelte';
 	import { formatDateTime, formatNumber } from '#lib/format.js';
 	import type { MeterConnectivity, MeterOperationalRole } from '#lib/types.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	let page = $state(1);
+	let pageSize = $state(10);
 	let chartValues = $derived((data.history?.readings ?? []).map((reading) => reading.readingKwh).filter((value): value is number => value !== null));
+	let readingRows = $derived([...(data.history?.readings ?? [])].reverse());
+	let pagedReadings = $derived(readingRows.slice((page - 1) * pageSize, page * pageSize));
+	const changePageSize = (value: number) => { pageSize = value; page = 1; };
 	const roles: Record<MeterOperationalRole, string> = { grid_source: 'Grid source', solar_source: 'Solar source', generator_source: 'Generator source', distribution_or_bulk: 'Distribution / bulk', customer_load: 'Customer load', unknown: 'Unclassified' };
 	const tone = (value: MeterConnectivity): 'success' | 'danger' | 'warning' | 'neutral' => value === 'online' ? 'success' : value === 'never_online' ? 'danger' : value === 'offline' ? 'warning' : 'neutral';
 </script>
@@ -36,7 +43,10 @@
 
 		<section class="content-grid">
 			<article class="panel chart-panel">
-				<div class="heading"><div><p>Reading history</p><h2>Cumulative kWh register trend</h2></div><span>Provider recent window</span></div>
+				<div class="heading"><div><p>Reading history</p><h2>Cumulative kWh register trend</h2></div><div class="heading-actions"><span>Provider recent window</span><InfoPopover title="How meter history is interpreted" label="Explain meter history">
+					<p>The cumulative register is the meter's lifetime reading. Period usage is calculated from returned intervals and eligible cumulative-register movement, without counting the same energy twice.</p>
+					{#if history.warnings.length > 0}<ul>{#each history.warnings as warning}<li>{warning}</li>{/each}</ul>{/if}
+				</InfoPopover></div></div>
 				<LineChart values={chartValues} label={`Cumulative meter readings for ${meter.meterNumber}`} unit="kWh" />
 				<div class="range"><span>First: <strong>{formatNumber(history.summary.firstReadingKwh)} kWh</strong></span><span>Latest: <strong>{formatNumber(history.summary.latestReadingKwh)} kWh</strong></span><span>Change: <strong>{formatNumber(history.summary.registerChangeKwh)} kWh</strong></span></div>
 			</article>
@@ -52,15 +62,12 @@
 			</aside>
 		</section>
 
-		{#each history.warnings as warning}
-			<div class="warning"><AlertTriangle size={16} /><span>{warning}</span></div>
-		{/each}
-
 		<section class="panel readings">
 			<div class="heading"><div><p>Audit view</p><h2>Dated reading records</h2></div><span>{history.readings.length} rows</span></div>
 			<div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Cumulative reading</th><th>Interval usage</th><th>Customer</th><th>Quality</th></tr></thead><tbody>
-				{#each [...history.readings].reverse() as reading (reading.timestamp)}<tr><td>{formatDateTime(reading.timestamp)}</td><td>{formatNumber(reading.readingKwh)} kWh</td><td>{formatNumber(reading.usageKwh)} kWh</td><td>{reading.customerName ?? 'Not assigned in reading'}</td><td>{reading.anomalous ? 'Provider flagged anomaly' : 'Not flagged'}</td></tr>{:else}<tr><td colspan="5" class="empty">No readings were returned for this meter in the current provider window.</td></tr>{/each}
+				{#each pagedReadings as reading (reading.timestamp)}<tr><td data-label="Timestamp">{formatDateTime(reading.timestamp)}</td><td data-label="Cumulative reading">{formatNumber(reading.readingKwh)} kWh</td><td data-label="Interval usage">{formatNumber(reading.usageKwh)} kWh</td><td data-label="Customer">{reading.customerName ?? 'Not assigned in reading'}</td><td data-label="Quality">{reading.anomalous ? 'Provider flagged anomaly' : 'Not flagged'}</td></tr>{:else}<tr><td colspan="5" class="empty">No readings were returned for this meter in the current provider window.</td></tr>{/each}
 			</tbody></table></div>
+			<Pagination total={history.readings.length} {page} {pageSize} onPageChange={(value) => page = value} onPageSizeChange={changePageSize} />
 		</section>
 	{/if}
 </AppShell>
@@ -85,18 +92,18 @@
 	.chart-panel, .details, .readings { padding: 1rem; }
 	.heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 	.heading > span { color: var(--text-muted); font-size: .62rem; }
+	.heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }.heading-actions > span { color: var(--text-muted); font-size: .62rem; }
 	.range { display: flex; justify-content: space-between; gap: 1rem; padding-top: .75rem; color: var(--text-muted); font-size: .63rem; }
 	.range strong { color: var(--navy); }
 	dl { margin: 0; }
 	dl div { display: grid; grid-template-columns: 1fr 1.2fr; gap: .7rem; padding: .7rem 0; border-top: 1px solid var(--line-soft); font-size: .67rem; }
 	dt { color: var(--text-muted); } dd { margin: 0; color: var(--navy); font-weight: 750; text-align: right; overflow-wrap: anywhere; }
-	.warning { display: flex; align-items: center; gap: .55rem; margin-top: .75rem; padding: .72rem .85rem; border: 1px solid #f1dfb5; border-radius: .75rem; background: #fffaf0; color: #855600; font-size: .67rem; }
 	.readings { margin-top: .75rem; }
-	.table-wrap { max-height: 30rem; overflow: auto; border: 1px solid var(--line-soft); border-radius: .75rem; }
+	.table-wrap { max-height: 30rem; overflow: auto; border: 1px solid var(--line-soft); border-radius: .75rem; scrollbar-gutter:stable; overscroll-behavior-inline:contain; }
 	table { width: 100%; border-collapse: collapse; font-size: .67rem; }
 	th { position: sticky; top: 0; padding: .68rem; background: var(--surface-soft); color: var(--text-muted); font-size: .59rem; text-align: left; text-transform: uppercase; }
 	td { padding: .7rem; border-top: 1px solid var(--line-soft); white-space: nowrap; }
 	.empty { padding: 2rem; text-align: center; color: var(--text-muted); }
 	@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, 1fr); } .content-grid { grid-template-columns: 1fr; } }
-	@media (max-width: 620px) { .kpis { grid-template-columns: 1fr; } .range { flex-direction: column; } }
+	@media (max-width: 599px) { .kpis { grid-template-columns: 1fr; } .range,.identity,.heading { align-items:flex-start; flex-direction:column; }.table-wrap{max-height:none;overflow:visible;border:0}.table-wrap table,.table-wrap tbody,.table-wrap tr,.table-wrap td{display:block;width:100%;box-sizing:border-box}.table-wrap thead{display:none}.table-wrap tbody{display:grid;gap:.75rem}.table-wrap tr{overflow:hidden;border:1px solid var(--line);border-radius:.85rem;background:var(--surface);box-shadow:var(--shadow-sm)}.table-wrap td{display:grid;grid-template-columns:minmax(7.4rem,40%) minmax(0,1fr);gap:.6rem;padding:.62rem .72rem;border-top:1px solid var(--line-soft);white-space:normal;overflow-wrap:anywhere}.table-wrap td:first-child{border-top:0}.table-wrap td::before{color:var(--text-muted);content:attr(data-label);font-size:.68rem;font-weight:800;text-transform:uppercase}.table-wrap .empty{display:block}.table-wrap .empty::before{display:none} }
 </style>

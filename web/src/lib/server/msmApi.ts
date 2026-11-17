@@ -6,7 +6,9 @@ import type {
 	FloorAnalysis,
 	FloorPositionTenancyTimeline,
 	MeterHistory,
+	MeterReportScope,
 	MeterSummary,
+	MeterUsageReport,
 	OperationsOverview,
 	RevenueAnalysis
 } from '#lib/types.js';
@@ -151,6 +153,22 @@ export const loadMeterHistory = (fetcher: typeof fetch, token: string, providerI
 		`/api/v1/ops/steama/meters/${providerId}/history${forceRefresh ? '?refresh=true' : ''}`,
 		'The meter history could not be loaded.'
 	);
+
+export const loadMeterUsageReport = (
+	fetcher: typeof fetch,
+	token: string,
+	input: { scope: MeterReportScope; meterIds: string[]; from: string; to: string; forceRefresh?: boolean }
+) => {
+	const query = new URLSearchParams({ scope: input.scope, from: input.from, to: input.to });
+	if (input.meterIds.length > 0) query.set('meterIds', input.meterIds.join(','));
+	if (input.forceRefresh) query.set('refresh', 'true');
+	return loadProtectedResource<MeterUsageReport>(
+		fetcher,
+		token,
+		`/api/v1/ops/steama/reports/meters?${query.toString()}`,
+		'The meter usage report could not be generated.'
+	);
+};
 
 export const loadCustomer = (fetcher: typeof fetch, token: string, providerId: string) =>
 	loadProtectedResource<CustomerDetail>(fetcher, token, `/api/v1/ops/steama/customers/${providerId}`, 'The customer account could not be loaded.');

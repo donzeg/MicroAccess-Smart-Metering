@@ -252,6 +252,78 @@ export interface SteamaMeterHistory {
   warnings: string[];
 }
 
+export type SteamaMeterReportScope = 'all' | 'source' | 'bulk' | 'customer_load' | 'unclassified';
+
+export interface SteamaMeterUsageReportRow {
+  providerId: string;
+  meterNumber: string;
+  name: string;
+  operationalRole: MeterOperationalRole;
+  customerId: string | null;
+  customerName: string | null;
+  connectivity: MeterConnectivity;
+  connectivityLabel: string;
+  openingRegisterKwh: number | null;
+  closingRegisterKwh: number | null;
+  recordedUsageKwh: number;
+  registerRecoveredKwh: number;
+  usageKwh: number;
+  estimatedValueNgn: number;
+  observedIntervals: number;
+  expectedIntervals: number;
+  coveragePercent: number;
+  recoveryEvents: number;
+  anomalyCount: number;
+  ignoredRegisterDrops: number;
+  firstReadingAt: string | null;
+  latestReadingAt: string | null;
+}
+
+export interface SteamaMeterUsageReport {
+  dataSource: {
+    provider: 'SteamaCo';
+    mode: 'live_read_only';
+    retrievedAt: string;
+    scope: 'meter_usage_report';
+  };
+  range: {
+    from: string;
+    to: string;
+    timezone: 'Africa/Lagos';
+  };
+  filters: {
+    scope: SteamaMeterReportScope;
+    meterIds: string[];
+  };
+  tariff: {
+    retailNgnPerKwh: number;
+    tariffBand: string;
+    currency: 'NGN';
+    status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+    effectiveFrom: string;
+    source: 'msm_configuration' | 'steama_observation';
+    versionsApplied: number;
+    mismatchedCustomerCount: number;
+  };
+  summary: {
+    aggregateComparable: boolean;
+    meterCount: number;
+    reportingMeterCount: number;
+    totalUsageKwh: number;
+    recordedUsageKwh: number;
+    registerRecoveredKwh: number;
+    estimatedValueNgn: number;
+    observedIntervals: number;
+    expectedIntervals: number;
+    coveragePercent: number;
+    recoveryEvents: number;
+    anomalyCount: number;
+    unavailableMeterCount: number;
+  };
+  rows: SteamaMeterUsageReportRow[];
+  warnings: string[];
+}
+
 export interface SteamaEnergyMixBucket {
   key: string;
   label: string;

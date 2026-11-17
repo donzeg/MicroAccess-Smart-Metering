@@ -18,6 +18,18 @@ const historyQuerySchema = z.object({
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+const meterReportQuerySchema = z.object({
+  scope: z.enum(['all', 'source', 'bulk', 'customer_load', 'unclassified']).optional().default('customer_load'),
+  meterIds: z.string().max(2048).optional().transform((value) =>
+    value
+      ? Array.from(new Set(value.split(',').map((item) => item.trim()).filter((item) => /^\d{1,32}$/.test(item))))
+      : []
+  ),
+  from: dateOnlySchema,
+  to: dateOnlySchema,
+  refresh: z.enum(['true', 'false']).optional().default('false')
+});
+
 const energyMixQuerySchema = z.object({
   period: z.enum(['hourly', 'daily', 'weekly', 'monthly']).optional().default('daily'),
   refresh: z.enum(['true', 'false']).optional().default('false'),
@@ -106,6 +118,46 @@ export const registerSteamaOperationsRoutes = async (app: FastifyInstance): Prom
         return await app.steamaOperationsService.getOverview(parsed.data.refresh === 'true');
       } catch (error) {
         request.log.error({ errorCode: error instanceof SteamaReadOnlyError ? error.code : 'unknown' }, 'Steama overview failed');
+        return sendProviderError(error, reply);
+      }
+    }
+  );
+
+  app.get(
+    '/api/v1/ops/steama/reports/meters',
+    { onRequest: [app.verifyJwt, app.requireRoles(['management']), app.rateLimitGuard('reads')] },
+    async (request, reply) => {
+      if (!app.steamaOperationsService) {
+        return reply.code(503).send({
+          code: 'provider_not_configured',
+          message: 'The SteamaCo read-only integration has not been configured.'
+        });
+      }
+
+      const parsed = meterReportQuerySchema.safeParse(request.query);
+      if (
+        !parsed.success ||
+        !validEnergyRange(
+          'daily',
+          parsed.success ? parsed.data.from : undefined,
+          parsed.success ? parsed.data.to : undefined
+        )
+      ) {
+        return reply.code(400).send({ code: 'invalid_query', message: 'Invalid meter report query.' });
+      }
+
+      try {
+        return await app.steamaOperationsService.getMeterUsageReport(
+          parsed.data.scope,
+          parsed.data.meterIds,
+          parsed.data.refresh === 'true',
+          { from: parsed.data.from, to: parsed.data.to }
+        );
+      } catch (error) {
+        request.log.error(
+          { errorCode: error instanceof SteamaReadOnlyError ? error.code : 'unknown' },
+          'Steama meter usage report failed'
+        );
         return sendProviderError(error, reply);
       }
     }

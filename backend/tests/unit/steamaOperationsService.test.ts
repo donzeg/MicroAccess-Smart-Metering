@@ -80,6 +80,8 @@ describe('SteamaOperationsService', () => {
     });
     expect(overview.customers[0].assignedMeterNumber).toBe('0308000187515');
     expect(overview.meters[1]).toMatchObject({
+      operationalRole: 'customer_load',
+      roleEvidence: 'model_rule',
       connectivity: 'offline',
       freshnessBucket: 'eight_to_fourteen_days',
       relayOn: true
@@ -187,7 +189,7 @@ describe('SteamaOperationsService', () => {
       customerName: '5th Floor -01 Tenant Account',
       assigned: true,
       operationalRole: 'customer_load',
-      roleEvidence: 'assignment'
+      roleEvidence: 'model_rule'
     });
     expect(overview.summary).toMatchObject({ assignedMeters: 1, unassignedMeters: 0 });
     expect(overview.exceptions.map((item) => item.key)).not.toContain('unassigned_meters');
@@ -982,6 +984,88 @@ describe('SteamaOperationsService', () => {
         observedIntervals: 1
       });
       expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/meters/258980/directives/' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports prepaid customer-meter usage with cumulative-register recovery and effective tariff value', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-15T08:15:00Z'));
+
+    try {
+      const archive = new InMemoryMeterArchiveRepository();
+      await archive.upsertReadings([{
+        source: 'utility_reading',
+        intervalStart: '2026-11-08T07:00:00.000Z',
+        timestamp: '2026-11-08T08:01:00.000Z',
+        readingKwh: 1_745.95,
+        usageKwh: 44.66,
+        anomalous: false,
+        meterId: '258980',
+        meterNumber: '0179250930429',
+        customerId: '1638023',
+        customerName: '5th Floor -01 MicroAccess Corporate Office'
+      }]);
+      const request = vi.fn().mockImplementation(({ path }: { path: string }) => {
+        if (path === '/meters/') {
+          return Promise.resolve({
+            count: 1,
+            results: [{
+              id: 258980,
+              reference: '0179250930429',
+              meter_type_name: 'DS3600',
+              customer: 1638023,
+              customer_name: '5th Floor -01 MicroAccess Corporate Office',
+              latest_meter_reading: 1_745.95,
+              latest_meter_reading_timestamp: '2026-11-08T08:01:00.000Z',
+              offline_duration_status: 'Offline (6 days)'
+            }]
+          });
+        }
+        if (path === '/customers/') {
+          return Promise.resolve({
+            count: 1,
+            results: [{
+              id: 1638023,
+              first_name: '5th Floor -01',
+              last_name: 'MicroAccess Corporate Office',
+              energy_price: 203,
+              service_based_tariff: 'A'
+            }]
+          });
+        }
+        if (path === '/sites/') return Promise.resolve({ count: 1, results: [{ id: 20, name: 'Na-Aka Hub' }] });
+        throw new Error(`unexpected_path:${path}`);
+      });
+
+      const result = await new SteamaOperationsService(
+        { request },
+        60_000,
+        {
+          retailTariffNgnPerKwh: 203,
+          tariffEffectiveFrom: '2025-12-31T23:00:00.000Z',
+          commissioningEpochAt: '2025-12-31T23:00:00.000Z',
+          meterArchiveRepository: archive
+        }
+      ).getMeterUsageReport('customer_load', [], false, { from: '2026-01-01', to: '2026-11-15' });
+
+      expect(result.summary).toMatchObject({
+        aggregateComparable: true,
+        meterCount: 1,
+        reportingMeterCount: 1,
+        recordedUsageKwh: 44.66,
+        registerRecoveredKwh: 1_701.29,
+        totalUsageKwh: 1_745.95,
+        estimatedValueNgn: 354_427.85,
+        recoveryEvents: 1
+      });
+      expect(result.rows[0]).toMatchObject({
+        meterNumber: '0179250930429',
+        operationalRole: 'customer_load',
+        usageKwh: 1_745.95,
+        estimatedValueNgn: 354_427.85
+      });
     } finally {
       vi.useRealTimers();
     }

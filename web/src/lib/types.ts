@@ -261,6 +261,71 @@ export interface MeterHistory {
 	warnings: string[];
 }
 
+export type MeterReportScope = 'all' | 'source' | 'bulk' | 'customer_load' | 'unclassified';
+
+export interface MeterUsageReportRow {
+	providerId: string;
+	meterNumber: string;
+	name: string;
+	operationalRole: MeterOperationalRole;
+	customerId: string | null;
+	customerName: string | null;
+	connectivity: MeterConnectivity;
+	connectivityLabel: string;
+	openingRegisterKwh: number | null;
+	closingRegisterKwh: number | null;
+	recordedUsageKwh: number;
+	registerRecoveredKwh: number;
+	usageKwh: number;
+	estimatedValueNgn: number;
+	observedIntervals: number;
+	expectedIntervals: number;
+	coveragePercent: number;
+	recoveryEvents: number;
+	anomalyCount: number;
+	ignoredRegisterDrops: number;
+	firstReadingAt: string | null;
+	latestReadingAt: string | null;
+}
+
+export interface MeterUsageReport {
+	dataSource: {
+		provider: 'SteamaCo';
+		mode: 'live_read_only';
+		retrievedAt: string;
+		scope: 'meter_usage_report';
+	};
+	range: { from: string; to: string; timezone: 'Africa/Lagos' };
+	filters: { scope: MeterReportScope; meterIds: string[] };
+	tariff: {
+		retailNgnPerKwh: number;
+		tariffBand: string;
+		currency: 'NGN';
+		status: 'provider_synchronized' | 'configured_bootstrap' | 'provider_mismatch';
+		effectiveFrom: string;
+		source: 'msm_configuration' | 'steama_observation';
+		versionsApplied: number;
+		mismatchedCustomerCount: number;
+	};
+	summary: {
+		aggregateComparable: boolean;
+		meterCount: number;
+		reportingMeterCount: number;
+		totalUsageKwh: number;
+		recordedUsageKwh: number;
+		registerRecoveredKwh: number;
+		estimatedValueNgn: number;
+		observedIntervals: number;
+		expectedIntervals: number;
+		coveragePercent: number;
+		recoveryEvents: number;
+		anomalyCount: number;
+		unavailableMeterCount: number;
+	};
+	rows: MeterUsageReportRow[];
+	warnings: string[];
+}
+
 export interface EnergyMixBucket {
 	key: string;
 	label: string;
@@ -528,6 +593,42 @@ export interface OperationsOverview {
 	exceptions: OperationsException[];
 	meters: MeterSummary[];
 	customers: CustomerSummary[];
+	warnings: string[];
+}
+
+export type ManagementAlertSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type ManagementAlertCategory =
+	| 'connectivity'
+	| 'safety'
+	| 'assignment'
+	| 'customer'
+	| 'commercial'
+	| 'energy'
+	| 'configuration'
+	| 'data_quality';
+
+export interface ManagementAlert {
+	id: string;
+	title: string;
+	description: string;
+	severity: ManagementAlertSeverity;
+	category: ManagementAlertCategory;
+	affectedCount: number;
+	action: string;
+	href: string;
+	observedAt: string;
+	source: 'operations' | 'energy_mix';
+}
+
+export interface ManagementAlertFeed {
+	dataSource: {
+		mode: 'live_read_only';
+		retrievedAt: string;
+	};
+	activeConditionCount: number;
+	affectedRecordCount: number;
+	severityCounts: Record<ManagementAlertSeverity, number>;
+	alerts: ManagementAlert[];
 	warnings: string[];
 }
 

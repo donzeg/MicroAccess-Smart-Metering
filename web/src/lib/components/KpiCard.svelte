@@ -37,6 +37,10 @@
 		box-shadow: var(--shadow-sm);
 	}
 
+	.kpi > div:last-child {
+		min-width: 0;
+	}
+
 	.icon-wrap {
 		display: grid;
 		width: 2.4rem;
@@ -87,10 +91,9 @@
 	span {
 		display: block;
 		margin-top: 0.45rem;
-		overflow: hidden;
 		color: var(--text-muted);
 		font-size: 0.74rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.35;
+		overflow-wrap: anywhere;
 	}
 </style>

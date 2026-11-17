@@ -97,4 +97,18 @@
 	.navigation-progress span { width: .8rem; height: .8rem; border: 2px solid var(--pale); border-top-color: var(--action); border-radius: 50%; animation: navigation-spin .7s linear infinite; }
 	.navigation-progress strong { font-size: .72rem; }
 	@keyframes navigation-spin { to { transform: rotate(360deg); } }
+
+	@media (max-width: 1399px) {
+		:global(.filter-panel input), :global(.filter-panel select), :global(.filters input), :global(.filters select), :global(.builder input), :global(.builder select) { min-height: 2.75rem; box-sizing: border-box; font-size: .8rem !important; }
+		:global(.filter-panel label), :global(.builder form > label) { font-size: .7rem !important; }
+		:global(.filter-panel button), :global(.filter-panel form > a), :global(.builder form > button), :global(.builder form > a) { min-height: 2.75rem; font-size: .75rem !important; }
+		:global(.kpis p), :global(.kpis span), :global(.kpi-grid p), :global(.kpi-grid span) { font-size: max(.68rem, 11px); }
+		:global(.panel-heading > span), :global(.heading > span) { font-size: .7rem; }
+	}
+
+	@media (max-width: 599px) {
+		:global(.panel) { border-radius: .85rem; }
+		:global(.panel-heading), :global(.heading) { gap: .7rem; }
+		:global(.panel-heading h2), :global(.heading h2) { font-size: 1rem; }
+	}
 </style>

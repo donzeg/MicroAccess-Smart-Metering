@@ -47,7 +47,10 @@ import type {
   SteamaFloorUsageSummary,
   SteamaMeterHistory,
   SteamaMeterReadingPoint,
+  SteamaMeterReportScope,
   SteamaMeterSummary,
+  SteamaMeterUsageReport,
+  SteamaMeterUsageReportRow,
   SteamaOperationsException,
   SteamaOperationsOverview,
   SteamaRevenueAnalysis,
@@ -404,6 +407,9 @@ const classifyRole = (
   }
   if (model.toUpperCase() === 'DS3100') {
     return { operationalRole: 'distribution_or_bulk', roleEvidence: 'model_rule' };
+  }
+  if (model.toUpperCase() === 'DS3600') {
+    return { operationalRole: 'customer_load', roleEvidence: 'model_rule' };
   }
   if (assigned) return { operationalRole: 'customer_load', roleEvidence: 'assignment' };
   return { operationalRole: 'unknown', roleEvidence: 'unclassified' };
@@ -1512,6 +1518,169 @@ export class SteamaOperationsService {
     this.cachedOverview = { value: overview, expiresAt: now + this.cacheTtlMs };
     await this.retainSnapshot('overview', overview, retrievedAt);
     return overview;
+  }
+
+  async getMeterUsageReport(
+    scope: SteamaMeterReportScope,
+    meterIds: string[],
+    forceRefresh: boolean,
+    customRange: EnergyMixDateRange
+  ): Promise<SteamaMeterUsageReport> {
+    const now = Date.now();
+    const range = resolveEnergyMixRange(now, 'daily', customRange);
+    if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) {
+      throw new Error('invalid_meter_report_range');
+    }
+
+    const overview = await this.getOverview(forceRefresh);
+    const requestedIds = new Set(meterIds);
+    const roleMatchesScope = (meter: SteamaMeterSummary): boolean => {
+      if (scope === 'all') return true;
+      if (scope === 'customer_load') return meter.operationalRole === 'customer_load';
+      if (scope === 'unclassified') return meter.operationalRole === 'unknown';
+      if (scope === 'bulk') return meter.operationalRole === 'distribution_or_bulk';
+      return ['grid_source', 'solar_source', 'generator_source'].includes(meter.operationalRole);
+    };
+    const selectedMeters = overview.meters.filter(
+      (meter) => roleMatchesScope(meter) && (requestedIds.size === 0 || requestedIds.has(meter.providerId))
+    );
+    const tariff = await this.tariffContext(
+      new Date(range.start).toISOString(),
+      new Date(range.end).toISOString(),
+      overview.customers
+    );
+    const expectedHours = Math.max(0, Math.round((range.end - range.start) / HOUR_MS));
+    const rows: SteamaMeterUsageReportRow[] = [];
+    let unavailableMeterCount = 0;
+
+    const buildRow = async (meter: SteamaMeterSummary): Promise<SteamaMeterUsageReportRow> => {
+      const [usage, history] = await Promise.all([
+        this.getAuthoritativeMeterUsage(meter, range.start, range.end, forceRefresh),
+        this.getMeterHistory(meter.providerId, false)
+      ]);
+      const rangeReadings = history.readings
+        .filter((reading) => {
+          const timestamp = new Date(reading.timestamp).getTime();
+          return Number.isFinite(timestamp) && timestamp >= range.start && timestamp < range.end;
+        })
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+      const predecessor = history.readings
+        .filter((reading) => {
+          const timestamp = new Date(reading.timestamp).getTime();
+          return Number.isFinite(timestamp) && timestamp < range.start;
+        })
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+        .at(-1);
+      const validRegisterReadings = [...(predecessor ? [predecessor] : []), ...rangeReadings].filter(
+        (reading): reading is SteamaMeterReadingPoint & { readingKwh: number } =>
+          reading.readingKwh !== null &&
+          Number.isFinite(reading.readingKwh) &&
+          reading.readingKwh >= 0 &&
+          !reading.anomalous
+      );
+      const recordedUsageKwh = usage.recordedUsageKwh;
+      const registerRecoveredKwh = usage.registerRecoveredKwh;
+      const usageKwh = roundEnergy(recordedUsageKwh + registerRecoveredKwh);
+      const estimatedValueNgn = roundMoney(
+        usage.readings.reduce((sum, reading) => {
+          const version = tariffAt(tariff.versions, reading.intervalStart);
+          return sum + reading.usageKwh * (version?.retailNgnPerKwh ?? tariff.current.retailNgnPerKwh);
+        }, 0)
+      );
+      const observedIntervals = usage.recordedIntervalKeys.size;
+      const firstUsageReading = usage.readings[0];
+      const latestUsageReading = usage.readings.at(-1);
+
+      return {
+        providerId: meter.providerId,
+        meterNumber: meter.meterNumber,
+        name: meter.name,
+        operationalRole: meter.operationalRole,
+        customerId: meter.customerId,
+        customerName: meter.customerName,
+        connectivity: meter.connectivity,
+        connectivityLabel: meter.connectivityLabel,
+        openingRegisterKwh: validRegisterReadings[0]?.readingKwh ?? null,
+        closingRegisterKwh: validRegisterReadings.at(-1)?.readingKwh ?? null,
+        recordedUsageKwh,
+        registerRecoveredKwh,
+        usageKwh,
+        estimatedValueNgn,
+        observedIntervals,
+        expectedIntervals: expectedHours,
+        coveragePercent: expectedHours > 0 ? roundPercent((observedIntervals / expectedHours) * 100) : 0,
+        recoveryEvents: usage.recoveryEvents.length,
+        anomalyCount: rangeReadings.filter((reading) => reading.anomalous).length,
+        ignoredRegisterDrops: usage.ignoredRegisterDrops,
+        firstReadingAt: firstUsageReading?.timestamp ?? rangeReadings[0]?.timestamp ?? null,
+        latestReadingAt: latestUsageReading?.timestamp ?? rangeReadings.at(-1)?.timestamp ?? null
+      };
+    };
+
+    const batchSize = 6;
+    for (let index = 0; index < selectedMeters.length; index += batchSize) {
+      const results = await Promise.allSettled(selectedMeters.slice(index, index + batchSize).map(buildRow));
+      for (const result of results) {
+        if (result.status === 'fulfilled') rows.push(result.value);
+        else unavailableMeterCount += 1;
+      }
+    }
+    rows.sort((left, right) => left.meterNumber.localeCompare(right.meterNumber, undefined, { numeric: true }));
+
+    const recordedUsageKwh = roundEnergy(rows.reduce((sum, row) => sum + row.recordedUsageKwh, 0));
+    const registerRecoveredKwh = roundEnergy(rows.reduce((sum, row) => sum + row.registerRecoveredKwh, 0));
+    const totalUsageKwh = roundEnergy(rows.reduce((sum, row) => sum + row.usageKwh, 0));
+    const observedIntervals = rows.reduce((sum, row) => sum + row.observedIntervals, 0);
+    const expectedIntervals = rows.reduce((sum, row) => sum + row.expectedIntervals, 0);
+    const warnings: string[] = [];
+    if (scope === 'all') {
+      warnings.push('Source, bulk and downstream customer meters are listed together for comparison; their kWh must not be treated as one physical energy total.');
+    }
+    if (unavailableMeterCount > 0) warnings.push(`${unavailableMeterCount} selected meter(s) could not be reported.`);
+    const missingRequestedIds = meterIds.filter((meterId) => !selectedMeters.some((meter) => meter.providerId === meterId));
+    if (missingRequestedIds.length > 0) warnings.push(`${missingRequestedIds.length} requested meter(s) did not match the selected scope.`);
+
+    return {
+      dataSource: {
+        provider: 'SteamaCo',
+        mode: 'live_read_only',
+        retrievedAt: new Date(now).toISOString(),
+        scope: 'meter_usage_report'
+      },
+      range: {
+        from: new Date(range.start).toISOString(),
+        to: new Date(range.end - 1).toISOString(),
+        timezone: 'Africa/Lagos'
+      },
+      filters: { scope, meterIds },
+      tariff: {
+        retailNgnPerKwh: tariff.current.retailNgnPerKwh,
+        tariffBand: tariff.current.tariffBand,
+        currency: 'NGN',
+        status: tariff.status,
+        effectiveFrom: tariff.current.effectiveFrom,
+        source: tariff.current.source,
+        versionsApplied: tariff.versions.length,
+        mismatchedCustomerCount: tariff.mismatchedCustomerCount
+      },
+      summary: {
+        aggregateComparable: scope !== 'all' && scope !== 'unclassified',
+        meterCount: selectedMeters.length,
+        reportingMeterCount: rows.filter((row) => row.usageKwh > 0 || row.observedIntervals > 0).length,
+        totalUsageKwh,
+        recordedUsageKwh,
+        registerRecoveredKwh,
+        estimatedValueNgn: roundMoney(rows.reduce((sum, row) => sum + row.estimatedValueNgn, 0)),
+        observedIntervals,
+        expectedIntervals,
+        coveragePercent: expectedIntervals > 0 ? roundPercent((observedIntervals / expectedIntervals) * 100) : 0,
+        recoveryEvents: rows.reduce((sum, row) => sum + row.recoveryEvents, 0),
+        anomalyCount: rows.reduce((sum, row) => sum + row.anomalyCount, 0),
+        unavailableMeterCount
+      },
+      rows,
+      warnings
+    };
   }
 
   async getMeter(providerId: string): Promise<SteamaMeterSummary> {

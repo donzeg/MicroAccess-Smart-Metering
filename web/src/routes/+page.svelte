@@ -78,18 +78,11 @@
 			</div>
 		</section>
 
-		<section class="boundary-grid">
-			<a class="boundary ready" href="/energy-mix"><strong>Solar and grid contribution</strong><span>Compare matched hourly, daily, weekly and monthly source usage against the 90–95% solar target.</span></a>
-			<a class="boundary ready" href="/floors"><strong>Floor-by-floor operations</strong><span>Compare tenant-meter usage across Ground Floor and Floors 1–5, then inspect each permanent unit position.</span></a>
-			<a class="boundary ready" href="/reports"><strong>Reports and recent history</strong><span>Review dated kWh readings, usage trends and account ledger movement.</span></a>
-			<a class="boundary" href="/customers"><strong>Customer account operations</strong><span>Separate monetary account balances from meter energy readings.</span></a>
-			<div class="boundary blocked"><strong>Payment automation remains controlled</strong><span>Credit posting and remote commands remain disabled until the vendor contract is certified.</span></div>
-		</section>
 	{/if}
 </AppShell>
 
 <style>
-	.live-banner, .error-card, .panel, .boundary { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
+	.live-banner, .error-card, .panel { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
 	.live-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; padding: .75rem .9rem; }
 	.live-banner > div { display: flex; align-items: center; gap: .5rem; }
 	.live-banner > div > span { width: .46rem; height: .46rem; border-radius: 50%; background: var(--success); }
@@ -106,12 +99,13 @@
 	.heading h2 { margin: 0; color: var(--navy); font-size: 1.03rem; }
 	.heading a { color: var(--blue); font-size: .68rem; font-weight: 800; text-decoration: none; }
 	.source-list { display: grid; gap: .45rem; }
-	.source-list a { display: grid; grid-template-columns: 2rem minmax(9rem, 1.3fr) minmax(7rem, .8fr) auto; align-items: center; gap: .65rem; padding: .67rem; border: 1px solid var(--line-soft); border-radius: .72rem; color: inherit; text-decoration: none; }
+	.source-list a { display: grid; grid-template-columns: 2rem minmax(0, 1.3fr) minmax(0, .8fr) auto; align-items: center; gap: .65rem; padding: .67rem; border: 1px solid var(--line-soft); border-radius: .72rem; color: inherit; text-decoration: none; }
 	.source-list a:hover { border-color: var(--sky); background: var(--surface-soft); }
 	.source-icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .6rem; background: var(--pale-blue); color: var(--blue); }
+	.source-list a > span { min-width: 0; }
 	.source-list strong, .source-list small { display: block; }
-	.source-list strong { color: var(--navy); font-size: .73rem; }
-	.source-list small { margin-top: .16rem; color: var(--text-muted); font-size: .59rem; }
+	.source-list strong { overflow-wrap: anywhere; color: var(--navy); font-size: .73rem; }
+	.source-list small { margin-top: .16rem; overflow-wrap: anywhere; color: var(--text-muted); font-size: .59rem; }
 	.reading { text-align: right; }
 	.exceptions { margin-top: .75rem; }
 	.exception-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .65rem; }
@@ -121,14 +115,7 @@
 	.exception-grid a > strong { float: right; color: var(--navy); font-size: 1.3rem; }
 	.exception-grid h3 { margin: .8rem 0 .35rem; color: var(--navy); font-size: .75rem; }
 	.exception-grid p { margin: 0; color: var(--text-muted); font-size: .64rem; line-height: 1.45; }
-	.boundary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-top: .75rem; }
-	.boundary { display: block; padding: 1rem; color: inherit; text-decoration: none; }
-	.boundary strong, .boundary span { display: block; }
-	.boundary strong { color: var(--navy); font-size: .78rem; }
-	.boundary span { margin-top: .35rem; color: var(--text-muted); font-size: .66rem; line-height: 1.5; }
-	.boundary.ready { border-color: #bfe3d4; }
-	.boundary.blocked { border-color: #f1dfb5; }
-	@media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } .exception-grid { grid-template-columns: repeat(3, 1fr); } }
-	@media (max-width: 900px) { .dashboard-grid, .boundary-grid { grid-template-columns: 1fr; } }
-	@media (max-width: 650px) { .kpi-grid, .exception-grid { grid-template-columns: 1fr; } .source-list a { grid-template-columns: 2rem 1fr auto; } .reading { display: none; } }
+	@media (max-width: 1399px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } .exception-grid { grid-template-columns: repeat(3, 1fr); } .dashboard-grid { grid-template-columns: 1fr; } }
+	@media (max-width: 899px) { .kpi-grid, .exception-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+	@media (max-width: 599px) { .kpi-grid, .exception-grid { grid-template-columns: 1fr; } .source-list a { grid-template-columns: 2rem minmax(0,1fr) auto; min-height: 3.5rem; } .reading { display: none; } .panel { padding: .8rem; } }
 </style>

@@ -97,7 +97,11 @@
 
 	@media (max-width: 800px) {
 		.login-shell { grid-template-columns: 1fr; }
-		.brand-panel { min-height: auto; gap: 4rem; padding: 2rem; }
-		.form-panel { min-height: 60vh; }
+		.brand-panel { min-height: auto; gap: 1.5rem; padding: 1.5rem; }
+		.brand-copy h1 { font-size: clamp(2rem, 8vw, 3.25rem); }
+		.brand-copy > p:last-child { margin-top: .85rem; font-size: .88rem; line-height: 1.55; }
+		.security-note { font-size: .74rem; }
+		.form-panel { min-height: auto; padding: 1rem; }
+		form { box-sizing: border-box; padding: 1.4rem; border-radius: 1rem; }
 	}
 </style>

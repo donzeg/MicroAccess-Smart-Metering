@@ -41,9 +41,9 @@
 {/if}
 
 <style>
-	.chart { display: grid; min-width: 48rem; height: 19rem; grid-template-columns: repeat(var(--count, 1), minmax(2rem, 1fr)); gap: .35rem; align-items: end; }
+	.chart { display: grid; min-width: max(100%, calc(var(--count, 1) * 2.4rem)); height: 19rem; grid-template-columns: repeat(var(--count, 1), minmax(2rem, 1fr)); gap: .35rem; align-items: end; }
 	.column { display: grid; height: 100%; grid-template-rows: 1.3rem 1fr 1.1rem .8rem; align-items: end; text-align: center; }
-	.value { overflow: hidden; color: var(--text-muted); font-size: .48rem; text-overflow: ellipsis; white-space: nowrap; }
+	.value { overflow: hidden; color: var(--text); font-size: .7rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 	.bar-track { position: relative; height: 100%; overflow: hidden; border-radius: .35rem .35rem .18rem .18rem; background: repeating-linear-gradient(to top, var(--line-soft) 0, var(--line-soft) 1px, transparent 1px, transparent 25%); }
 	.bar-track.missing-source { border: 1px dashed var(--line); background: repeating-linear-gradient(135deg, transparent 0, transparent 7px, var(--line-soft) 7px, var(--line-soft) 10px); }
 	.bar { position: absolute; bottom: 0; width: 100%; overflow: hidden; border-radius: .35rem .35rem .15rem .15rem; box-shadow: 0 .2rem .6rem rgba(0,29,57,.12); }
@@ -51,7 +51,8 @@
 	.grid { background: linear-gradient(180deg, var(--blue), var(--nav-surface)); }
 	.generator { background: linear-gradient(180deg, #f4bd6d, var(--generator)); }
 	.zero-mark { position: absolute; right: 10%; bottom: .2rem; left: 10%; height: 3px; border-radius: 999px; background: var(--steel); }
-	.column > span { overflow: hidden; color: var(--navy); font-size: .52rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
-	.column > small { color: var(--text-muted); font-size: .44rem; }
+	.column > span { overflow: hidden; color: var(--navy); font-size: .66rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+	.column > small { color: var(--text); font-size: .61rem; font-weight: 650; }
 	.empty { display: grid; min-height: 12rem; place-items: center; color: var(--text-muted); font-size: .7rem; text-align: center; }
+	@media (max-width: 899px) { .chart { height: 16rem; min-width: max(100%, calc(var(--count, 1) * 2.7rem)); } }
 </style>

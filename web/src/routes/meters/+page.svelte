@@ -2,6 +2,7 @@
 	import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, ListFilter, Search } from '@lucide/svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import PageHeader from '#lib/components/PageHeader.svelte';
+	import Pagination from '#lib/components/Pagination.svelte';
 	import StatusPill from '#lib/components/StatusPill.svelte';
 	import { formatDateTime, formatNumber } from '#lib/format.js';
 	import type { MeterConnectivity, MeterOperationalRole, MeterSummary } from '#lib/types.js';
@@ -16,6 +17,8 @@
 	let role = $state<'all' | MeterOperationalRole>('all');
 	let sortKey = $state<SortKey>('connectivity');
 	let sortDirection = $state<SortDirection>('asc');
+	let page = $state(1);
+	let pageSize = $state(10);
 	let meters = $derived(data.overview?.meters ?? []);
 	let filtered = $derived(meters.filter((meter) => {
 		const term = search.trim().toLowerCase();
@@ -66,13 +69,16 @@
 		return (sortDirection === 'asc' ? result : -result) || collator.compare(left.meterNumber, right.meterNumber);
 	};
 	let sorted = $derived([...filtered].sort(compareMeters));
+	let pagedMeters = $derived(sorted.slice((page - 1) * pageSize, page * pageSize));
 	const toggleSort = (key: SortKey) => {
 		if (sortKey === key) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
 		else {
 			sortKey = key;
-			sortDirection = key === 'lastSeen' || key === 'latestRegister' ? 'desc' : 'asc';
+			 sortDirection = key === 'lastSeen' || key === 'latestRegister' ? 'desc' : 'asc';
 		}
+		page = 1;
 	};
+	const changePageSize = (value: number) => { pageSize = value; page = 1; };
 	const ariaSort = (key: SortKey): 'none' | 'ascending' | 'descending' =>
 		sortKey !== key ? 'none' : sortDirection === 'asc' ? 'ascending' : 'descending';
 	const tone = (value: MeterConnectivity): 'success' | 'danger' | 'warning' | 'neutral' => value === 'online' ? 'success' : value === 'never_online' ? 'danger' : value === 'offline' ? 'warning' : 'neutral';
@@ -87,9 +93,9 @@
 		<section class="panel">
 			<div class="panel-heading"><div><p>Live estate</p><h2>All meters</h2></div><span>{sorted.length} of {meters.length}</span></div>
 			<div class="filters">
-				<label class="search"><Search size={16} /><input bind:value={search} placeholder="Search meter, model or customer" aria-label="Search meters" /></label>
-				<label><ListFilter size={15} /><select bind:value={connectivity} aria-label="Connectivity filter"><option value="all">All connectivity</option><option value="online">Online</option><option value="offline">Offline</option><option value="never_online">Never online</option><option value="unknown">Unknown</option></select></label>
-				<label><select bind:value={role} aria-label="Role filter"><option value="all">All roles</option><option value="grid_source">Grid source</option><option value="solar_source">Solar source</option><option value="distribution_or_bulk">Distribution / bulk</option><option value="customer_load">Customer load</option><option value="unknown">Unclassified</option></select></label>
+				<label class="search"><Search size={16} /><input bind:value={search} oninput={() => page = 1} placeholder="Search meter, model or customer" aria-label="Search meters" /></label>
+				<label><ListFilter size={15} /><select bind:value={connectivity} onchange={() => page = 1} aria-label="Connectivity filter"><option value="all">All connectivity</option><option value="online">Online</option><option value="offline">Offline</option><option value="never_online">Never online</option><option value="unknown">Unknown</option></select></label>
+				<label><select bind:value={role} onchange={() => page = 1} aria-label="Role filter"><option value="all">All roles</option><option value="grid_source">Grid source</option><option value="solar_source">Solar source</option><option value="distribution_or_bulk">Distribution / bulk</option><option value="customer_load">Customer load</option><option value="unknown">Unclassified</option></select></label>
 			</div>
 			<div class="table-wrap"><table>
 				<thead><tr>
@@ -101,23 +107,24 @@
 					<th aria-sort={ariaSort('latestRegister')}><button type="button" class="sort" onclick={() => toggleSort('latestRegister')}>Latest register {#if sortKey === 'latestRegister'}{#if sortDirection === 'asc'}<ArrowUp size={13} />{:else}<ArrowDown size={13} />{/if}{:else}<ArrowUpDown size={13} />{/if}</button></th>
 					<th><span class="sr-only">Open record</span></th>
 				</tr></thead>
-				<tbody>{#each sorted as meter (meter.providerId)}
+				<tbody>{#each pagedMeters as meter (meter.providerId)}
 					<tr>
-						<td><a href={`/meters/${meter.providerId}`}><strong>{meter.meterNumber}</strong><span>{meter.name} · {meter.model}</span></a></td>
-						<td>{labels[meter.operationalRole]}</td>
-						<td>{#if meter.customerId && meter.customerName}<a class="customer" href={`/customers/${meter.customerId}`}><strong>{meter.customerName}</strong><span>Open customer account</span></a>{:else}<span class="unassigned">Unassigned</span>{/if}</td>
-						<td><StatusPill label={meter.connectivityLabel} tone={tone(meter.connectivity)} /></td>
-						<td>{formatDateTime(meter.lastReadingAt)}</td><td>{formatNumber(meter.latestReadingKwh)} <small>kWh</small></td>
-						<td><a class="open" href={`/meters/${meter.providerId}`} aria-label={`Open meter ${meter.meterNumber}`}><ChevronRight size={17} /></a></td>
+						<td data-label="Meter"><a href={`/meters/${meter.providerId}`}><strong>{meter.meterNumber}</strong><span>{meter.name} · {meter.model}</span></a></td>
+						<td data-label="Operational role">{labels[meter.operationalRole]}</td>
+						<td data-label="Assigned customer">{#if meter.customerId && meter.customerName}<a class="customer" href={`/customers/${meter.customerId}`}><strong>{meter.customerName}</strong><span>Open customer account</span></a>{:else}<span class="unassigned">Unassigned</span>{/if}</td>
+						<td data-label="Connectivity"><StatusPill label={meter.connectivityLabel} tone={tone(meter.connectivity)} /></td>
+						<td data-label="Last seen">{formatDateTime(meter.lastReadingAt)}</td><td data-label="Latest register">{formatNumber(meter.latestReadingKwh)} <small>kWh</small></td>
+						<td data-label="Record"><a class="open" href={`/meters/${meter.providerId}`} aria-label={`Open meter ${meter.meterNumber}`}><ChevronRight size={17} /></a></td>
 					</tr>
 				{:else}<tr><td colspan="7" class="empty">No meter matches the selected filters.</td></tr>{/each}</tbody>
 			</table></div>
+			<Pagination total={sorted.length} {page} {pageSize} onPageChange={(value) => page = value} onPageSizeChange={changePageSize} />
 		</section>
 	{/if}
 </AppShell>
 
 <style>
-	.panel, .state { padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow-sm); }
+	.panel, .state { min-width:0; box-sizing:border-box; padding:1rem; border:1px solid var(--line); border-radius:1rem; background:var(--surface); box-shadow:var(--shadow-sm); }
 	.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem; }
 	.panel-heading p { margin: 0 0 .3rem; color: var(--steel); font-size: .62rem; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
 	.panel-heading h2 { margin: 0; color: var(--navy); font-size: 1.08rem; }
@@ -126,7 +133,7 @@
 	.filters label { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem; border: 1px solid var(--line); border-radius: .7rem; color: var(--text-muted); }
 	.filters input, .filters select { min-width: 0; padding: .68rem 0; border: 0; background: transparent; color: var(--text); outline: none; }
 	.search input { width: 100%; }
-	.table-wrap { overflow: auto; border: 1px solid var(--line-soft); border-radius: .8rem; }
+	.table-wrap { overflow: auto; border: 1px solid var(--line-soft); border-radius: .8rem; scrollbar-gutter: stable; overscroll-behavior-inline: contain; }
 	table { width: 100%; border-collapse: collapse; font-size: .69rem; }
 	th { padding: .72rem; background: var(--surface-soft); color: var(--text-muted); font-size: .6rem; letter-spacing: .04em; text-align: left; text-transform: uppercase; white-space: nowrap; }
 	.sort { display: inline-flex; align-items: center; gap: .3rem; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 800; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
@@ -145,5 +152,19 @@
 	.open { color: var(--blue); }
 	.empty { padding: 2rem; text-align: center; color: var(--text-muted); }
 	.state { color: var(--danger); }
-	@media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
+	@media (max-width: 1199px) {
+		.filters { grid-template-columns: 1fr; }
+		.table-wrap { overflow:visible; border:0; border-radius:0; }
+		table,tbody,tr,td { display:block; width:100%; box-sizing:border-box; }
+		thead { display:none; }
+		tbody { display:grid; gap:.75rem; }
+		tr { overflow:hidden; border:1px solid var(--line); border-radius:.85rem; background:var(--surface); box-shadow:var(--shadow-sm); }
+		td,td:first-child { position:static; display:grid; min-width:0; grid-template-columns:minmax(7.2rem,38%) minmax(0,1fr); align-items:center; gap:.65rem; padding:.62rem .72rem; border-top:1px solid var(--line-soft); background:transparent; box-shadow:none; white-space:normal; }
+		td:first-child { border-top:0; }
+		td::before { color:var(--text-muted); content:attr(data-label); font-size:.68rem; font-weight:800; text-transform:uppercase; }
+		td a,td strong,td span { min-width:0; overflow-wrap:anywhere; }
+		td:last-child .open { display:grid; width:2.75rem; height:2.75rem; place-items:center; border:1px solid var(--line); border-radius:.65rem; }
+		.empty { display:block; }
+		.empty::before { display:none; }
+	}
 </style>
